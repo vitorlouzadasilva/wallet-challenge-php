@@ -1,6 +1,6 @@
 # Regras de negócio da carteira
 
-Contrato para a simulação financeira. Cadastro, sessão e dashboard foram implementados na etapa 03. A etapa 04A implementa as regras de movimentação e autorização em `WalletService`, exercitado pelos testes. Ainda não existem rotas, controllers, Form Requests ou interfaces de movimentação financeira.
+Contrato para a simulação financeira. Cadastro e sessão foram implementados na etapa 03; a etapa 04A implementou as regras em `WalletService`; a etapa 04B conecta formulários, rotas autenticadas e extrato ao mesmo serviço. As regras financeiras e migrations existentes permanecem válidas.
 
 ## RN01 — Usuário possui carteira individual
 
@@ -59,7 +59,7 @@ Reversões usam uma nova chave. Repetir essa chave com mesmo conteúdo recupera 
 
 ## RN12 — Usuários não podem movimentar carteiras de terceiros indevidamente
 
-O futuro controller deve obter o ator da sessão autenticada, nunca de `initiated_by_user_id` recebido do cliente. O serviço recebe esse `User` confiável e já aplica:
+O controller obtém o ator da sessão autenticada, nunca de `initiated_by_user_id` recebido do cliente. O serviço recebe esse `User` confiável e aplica:
 
 - Depósito somente na própria carteira nesta simulação.
 - Transferência somente a partir da própria carteira; destino pode ser outro usuário existente.
@@ -76,7 +76,7 @@ Exemplo: transferência original de 1.000 centavos; destinatário possui apenas 
 
 ## RN14 — Valores financeiros são representados em centavos inteiros
 
-R$ 10,50 corresponde a 1050 centavos. `balance_cents`, `amount_cents` e `delta_cents` usam `BIGINT` assinado. O valor da operação é positivo; o sinal financeiro fica nos lançamentos. Não usar `FLOAT`, `DOUBLE`, arredondamento implícito ou conversão por ponto flutuante. O dashboard formata inteiros como texto; o serviço exige um `int` real e positivo, rejeitando inclusive strings numéricas e floats. A camada HTTP futura deverá validar/converter sua representação de entrada sem perda. Somas verificam overflow/underflow antes de calcular o resultado.
+R$ 10,50 corresponde a 1050 centavos. `balance_cents`, `amount_cents` e `delta_cents` usam `BIGINT` assinado. O valor da operação é positivo; o sinal financeiro fica nos lançamentos. Não usar `FLOAT`, `DOUBLE`, arredondamento implícito ou conversão por ponto flutuante. O dashboard formata inteiros como texto; o serviço exige um `int` real e positivo, rejeitando inclusive strings numéricas e floats. A camada HTTP valida o texto decimal brasileiro e converte para centavos sem ponto flutuante. Somas verificam overflow/underflow antes de calcular o resultado.
 
 ## Ciclo de vida
 

@@ -2,7 +2,7 @@
 
 Aplicação do desafio técnico Fullstack PHP do Grupo Adriano Cobuccio. O objetivo final é uma carteira financeira com cadastro, autenticação, depósitos, transferências e reversões, conforme o documento fornecido em `../regras_desafio/desafio fullstack PHP.docx`.
 
-A etapa 03 implementou cadastro com carteira inicial, login/logout e dashboard individual. A etapa 04A adiciona depósitos, transferências e reversões em `WalletService`, com transações, locks, idempotência e testes MySQL. As migrations existentes foram preservadas. Ainda não existem rotas, formulários ou interfaces financeiras. Consulte [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) e [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A etapa 03 implementou cadastro, sessão e dashboard; a etapa 04A adicionou o `WalletService` transacional. A etapa 04B conecta depósitos, transferências, reversões e extrato à interface Blade. As migrations financeiras permanecem intactas. Consulte [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) e [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Stack
 
@@ -99,7 +99,7 @@ Acesse **http://localhost:8088**. A primeira construção pode demorar devido ao
 - Página inicial com acesso ao cadastro e ao login.
 - Cadastro com nome, e-mail, senha e confirmação; usuário e carteira com saldo zero são gravados em uma única transação.
 - Login por e-mail/senha, renovação da sessão, logout com invalidação da sessão e renovação do token CSRF.
-- Dashboard autenticado com nome e saldo da própria carteira em reais; área de movimentações reservada para etapa futura.
+- Dashboard autenticado com saldo, formulários de depósito e transferência, extrato paginado e reversão de operações elegíveis.
 - Validação em português, escaping do Blade, CSRF e limite de tentativas de login.
 
 Para criar um usuário, abra **http://localhost:8088/register**, preencha os campos e confirme. A senha exige pelo menos 12 caracteres e no máximo 72 bytes, para respeitar o bcrypt sem truncamento; caracteres acentuados podem ocupar mais de um byte. O cadastro normaliza o e-mail para minúsculas, protege a senha com Hash do Laravel e inicia a sessão após o commit. Não há credenciais de demonstração nem seed necessário para acessar a aplicação.
@@ -113,6 +113,9 @@ Login em **http://localhost:8088/login**; após autenticar, o dashboard fica em 
 | GET / POST | `/login` | Visitante |
 | GET | `/dashboard` | Autenticado |
 | POST | `/logout` | Autenticado, com CSRF |
+| POST | `/wallet/deposit` | Autenticado, com CSRF e rate limit |
+| POST | `/wallet/transfer` | Autenticado, com CSRF e rate limit |
+| POST | `/operations/{operation}/reverse` | Autenticado, com CSRF e rate limit |
 
 O login utiliza mensagem genérica para e-mail/senha incorretos. São permitidas cinco falhas por e-mail/IP e vinte por IP em 60 segundos. Um login válido limpa o contador do par e-mail/IP; o limite global do IP permanece até expirar. As chaves do cache usam hashes, sem e-mail/IP em texto claro.
 
@@ -318,3 +321,23 @@ Validação final da etapa 04A em 10/11/2026:
 | Engine | `wallets`, `operations` e `ledger_entries` em InnoDB |
 | Banco de desenvolvimento | Duas carteiras existentes, nenhuma movimentação criada pelos testes, zero divergências saldo/histórico |
 | Versionamento | Infraestrutura/interfaces preservadas; arquivos versionáveis inspecionados para segredos |
+
+## Etapa 04B — Operações pela interface
+
+Entre em **http://localhost:8088/login** ou crie uma conta em `/register`. O dashboard `/dashboard` mostra o saldo da própria carteira, formulários de depósito e transferência e extrato paginado. Para demonstrar, crie duas contas com e-mails diferentes: entre na primeira, deposite `10,50`, transfira `2,00` para o e-mail da segunda e consulte o extrato em ambas. A conta que iniciou o depósito ou transferência pode clicar em **Reverter** e confirmar. A reversão pode deixar saldo negativo conforme a simulação. Não há integração bancária real.
+
+Cada formulário envia POST com CSRF e UUID idempotente criado no servidor. Em erro de validação ou domínio, a tentativa conserva a chave e os campos para correção; repetir o mesmo POST confirmado retorna a operação anterior, sem novo efeito. Após sucesso, há redirecionamento ao dashboard e os formulários novos recebem novas chaves. As três ações compartilham limite de 12 requisições por minuto por conta autenticada, independente da proteção idempotente do serviço.
+
+O valor digitado aceita `10`, `10,5`, `10,50` e `0,01`; usa vírgula decimal, sem separador de milhares. `ReaisToCents` converte texto para inteiro de centavos sem `float` e rejeita zero, negativos, formato ambíguo e valores acima de `PHP_INT_MAX`. A transferência recebe e-mail, normaliza para minúsculas e localiza a carteira do destinatário no servidor. A origem sempre vem da sessão. O extrato consulta somente `ledger_entries.wallet_id` da carteira autenticada, traz operação e referência sem N+1, exibe dez lançamentos por página e usa `BrazilianCurrency` também para débitos.
+
+Exceções financeiras conhecidas tornam-se mensagens de formulário. Falhas inesperadas mostram mensagem genérica e geram diagnóstico interno sem SQL, bindings ou payload financeiro. O `WalletService` e as migrations não foram modificados. Testes HTTP e de conversão usam o banco separado `testing` e podem ser executados junto à suíte completa:
+
+```powershell
+docker compose exec -T --user sail laravel.test php artisan test
+docker compose exec -T --user sail laravel.test php vendor/bin/pint --test
+docker compose exec -T --user sail laravel.test npm run build
+docker compose exec -T --user sail laravel.test php artisan route:list
+docker compose exec -T --user sail laravel.test php artisan migrate:status
+```
+
+Limites: o histórico pressupõe saldo consistente antes das operações; testes HTTP sequenciais não demonstram todos os cenários concorrentes. O formulário usa confirmação nativa do navegador para reversão, sem biblioteca de interface adicional.

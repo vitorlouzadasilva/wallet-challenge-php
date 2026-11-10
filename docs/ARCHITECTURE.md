@@ -1,20 +1,20 @@
 # Arquitetura da carteira financeira
 
-A etapa 02 adicionou esquema relacional e models; a etapa 03 implementou cadastro, sessão e interface inicial. A etapa 04A implementa o núcleo financeiro em `WalletService`, com depósitos, transferências e reversões transacionais. Não existem controllers, Form Requests ou interfaces financeiras; o serviço é exercitado diretamente pelos testes no MySQL `testing`.
+A etapa 02 adicionou esquema relacional e models; a etapa 03 implementou cadastro e sessão; a etapa 04A implementou o núcleo financeiro em `WalletService`. A etapa 04B integra esse serviço à interface Blade por rotas autenticadas, Form Requests e controller financeiro. Os testes usam o MySQL `testing`.
 
 ## Estrutura MVC e responsabilidades
 
-- `routes/`: agrupa rotas de visitantes em `guest` e dashboard/logout em `auth`, sem lógica de aplicação nas closures.
-- `app/Http/Controllers/`: coordena entrada e resposta; os controllers de autenticação usam recursos nativos e delegam criação de conta ao serviço. Nenhum controller calcula ou modifica saldos financeiros.
+- `routes/`: agrupa visitantes em `guest` e dashboard, logout e ações financeiras em `auth`, sem lógica de aplicação nas closures.
+- `app/Http/Controllers/`: coordena entrada e resposta; `WalletController` resolve destinatário por e-mail e delega toda movimentação ao `WalletService`. Nenhum controller calcula ou modifica saldos financeiros.
 - `app/Models/`: dados, casts e relacionamentos Eloquent; nenhuma movimentação automática.
-- `resources/views/`: layout compartilhado e páginas de início, cadastro, login e dashboard em Blade/Bootstrap 5 local.
+- `resources/views/`: layout compartilhado e páginas em Blade/Bootstrap 5 local; dashboard com formulários, saldo e extrato.
 - `database/migrations/`: evolução e integridade do esquema; migrations padrão executadas permanecem intactas.
 - `tests/Feature/WalletSchemaTest.php`: restrições verificadas no MySQL `testing`, com fixtures revertidas por transação, sem reset de banco.
 - `app/Services/WalletService.php`: coordena depósitos, transferências, reversões, autorização de domínio, locks, idempotência e persistência financeira.
 - `app/Exceptions/Wallet/`: diferencia rejeições de domínio e falhas de persistência, com mensagens públicas sem SQL.
 - `tests/Feature/WalletServiceTest.php`: valida casos de uso, falhas transacionais, replay, integridade dos lançamentos e limites monetários no MySQL `testing`.
 
-Usar Eloquent e os recursos transacionais do Laravel. Form Requests validam as entradas de autenticação. Policies/Gates financeiros serão definidos com os casos de uso futuros, junto às verificações do serviço. Não adicionar repositórios, interfaces ou patterns sem necessidade concreta.
+Usar Eloquent e os recursos transacionais do Laravel. Form Requests validam entradas de autenticação e financeiras. A autorização de movimentação é revalidada pelo `WalletService`; não há Policy/Gate adicional nesta etapa. Não adicionar repositórios, interfaces ou patterns sem necessidade concreta.
 
 ## Cadastro e autenticação implementados na etapa 03
 
@@ -91,7 +91,7 @@ Uma reversão cria outra operação `completed`, referencia a original e insere 
 
 ## API pública do WalletService
 
-Todos os métodos retornam `Operation`, com a relação `ledgerEntries` carregada. O ator deve ser o `User` autenticado e persistido fornecido pelo chamador confiável; o serviço não depende da facade Auth, de HTTP ou de parâmetros de sessão. A futura camada HTTP deverá usar `$request->user()`, nunca um iniciador escolhido no formulário.
+Todos os métodos retornam `Operation`, com a relação `ledgerEntries` carregada. O ator é o `User` autenticado fornecido pelo controller via `$request->user()`; o serviço continua independente de HTTP e da facade Auth.
 
 | Método | Responsabilidade |
 | --- | --- |
@@ -135,11 +135,11 @@ Não há catch de `Throwable` retornando sucesso. Erros de programação e integ
 - Os testes financeiros usam MySQL e rollback externo, preservando dados existentes. A simulação de uma primeira leitura vazia exercita INSERT, UNIQUE, rollback e recuperação reais, mas **não é um teste de concorrência com processos/conexões independentes**. Não há comprovação experimental de todos os interleavings nem teste de carga.
 - O uso normal deve deixar o serviço controlar a transação externa. Chamadas aninhadas usam savepoints; o commit final pertence ao chamador externo, que também deve tratar a repetição de toda a transação em caso de deadlock. Liberar um savepoint não equivale a um commit durável nem necessariamente libera todos os locks.
 - A igualdade saldo/soma dos lançamentos é preservada a partir de cadastro com zero e histórico consistente. Não há conciliação completa de todo o extrato a cada operação nem reparação de saldo adulterado por SQL. Os testes verificam essa igualdade, inclusive nos extremos de BIGINT.
-- O serviço autoriza com base no ator recebido; não substitui a autenticação do futuro controller. Não há HTTP ou interface financeira nesta etapa.
+- O serviço autoriza com base no ator recebido; as rotas HTTP exigem autenticação e o controller nunca aceita um iniciador escolhido no formulário.
 - Não há triggers/observers financeiros. A unicidade `(operation_id, wallet_id)` assume um lançamento por carteira em cada operação. Depósitos são entradas simuladas, sem conta externa de contrapartida; não é uma contabilidade geral de partidas dobradas.
 - FKs impedem exclusões de pais, mas não tornam folhas imutáveis contra SQL direto. Models retornados devem ser tratados como histórico pelos chamadores. Não há API de exclusão/edição financeira no serviço.
 
-Ver [BUSINESS_RULES.md](BUSINESS_RULES.md) para o contrato de autorização. A camada HTTP futura deverá traduzir exceções para respostas sanitizadas e validar sua entrada, sem enfraquecer as regras do serviço.
+Ver [BUSINESS_RULES.md](BUSINESS_RULES.md) para o contrato de autorização. A camada HTTP traduz exceções para respostas sanitizadas e valida sua entrada, sem enfraquecer as regras do serviço.
 
 ## Organização e segurança
 
@@ -152,3 +152,13 @@ Referências: [migrations Laravel 12](https://laravel.com/docs/12.x/migrations),
 Referências da etapa 03: [autenticação nativa Laravel 12](https://laravel.com/docs/12.x/authentication), [RateLimiter](https://laravel.com/docs/12.x/rate-limiting) e [Bootstrap com Vite](https://getbootstrap.com/docs/5.3/getting-started/vite/).
 
 Referências da etapa 04A: [transações Laravel 12](https://laravel.com/docs/12.x/database#database-transactions), [bloqueios pessimistas](https://laravel.com/docs/12.x/queries#pessimistic-locking) e [isolamento InnoDB 8.4](https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html).
+
+## Integração web da etapa 04B
+
+`DashboardController` parte de `$request->user()->wallet()`, pagina dez lançamentos por página e carrega `operation.originalOperation` antecipadamente. Nenhum ID de carteira vindo de query string seleciona o extrato. `BrazilianCurrency` formata saldos e deltas, incluindo negativos. Blade mostra o botão de reversão apenas em operações `completed` de depósito ou transferência iniciadas pelo próprio usuário; o serviço aplica novamente a autorização, independentemente da interface.
+
+As rotas financeiras POST usam `auth`, CSRF do middleware `web` e `throttle:wallet-actions` (12 por minuto por conta). `WalletController` usa Form Requests, obtém o ator da sessão, traduz erros de domínio e chama o `WalletService` por injeção. Para transferência, normaliza e valida o e-mail, consulta usuário e carteira de destino, e passa somente o ID de destino ao serviço. Não lê iniciador, origem ou saldo do formulário. Reversão passa somente ID da rota e chave; valores e participantes são recuperados pelo serviço.
+
+`ReaisToCents` valida strings decimais brasileiras e compara os dígitos com `PHP_INT_MAX` antes do cast. Não há aritmética de ponto flutuante. Os três formulários recebem UUID gerado no servidor; os Form Requests validam o formato. `old()` mantém a mesma chave quando a validação falha, e o controller preserva explicitamente a chave em erros de domínio. Após sucesso, POST/Redirect/GET fornece formulários novos. A garantia final continua sendo o índice `UNIQUE` e a recuperação transacional do serviço; o rate limit não substitui idempotência.
+
+Falhas inesperadas retornam mensagem genérica e um log diagnóstico limitado à classe, arquivo e linha da exceção, sem SQL, parâmetros ou payload. O diagnóstico de causa raiz pode exigir investigação no ambiente, pois o conteúdo da exceção é intencionalmente omitido. Não há endpoint de extrato alheio, seleção pública de usuários, integrações bancárias ou novas migrations. Testes HTTP exercitam autorização, CSRF, rate limit, replay, paginação, reversão e rollback no MySQL `testing`.
