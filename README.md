@@ -2,7 +2,7 @@
 
 Aplicação do desafio técnico Fullstack PHP do Grupo Adriano Cobuccio. O objetivo final é uma carteira financeira com cadastro, autenticação, depósitos, transferências e reversões, conforme o documento fornecido em `../regras_desafio/desafio fullstack PHP.docx`.
 
-A etapa 03 implementa cadastro com carteira inicial, login/logout por sessão e dashboard individual em Blade/Bootstrap. As migrations existentes foram preservadas. Depósitos, transferências e reversões permanecem somente documentados em [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) e [ARCHITECTURE.md](docs/ARCHITECTURE.md), aguardando revisão antes da implementação financeira.
+A etapa 03 implementou cadastro com carteira inicial, login/logout e dashboard individual. A etapa 04A adiciona depósitos, transferências e reversões em `WalletService`, com transações, locks, idempotência e testes MySQL. As migrations existentes foram preservadas. Ainda não existem rotas, formulários ou interfaces financeiras. Consulte [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) e [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Stack
 
@@ -160,9 +160,15 @@ docker compose exec -T --user sail laravel.test php artisan test
 docker compose exec -T --user sail laravel.test php vendor/bin/pint --test
 ```
 
-Os testes padrão verificam a asserção unitária e a página inicial. `WalletSchemaTest` valida a integridade relacional; `AuthenticationTest` cobre cadastro, rollback, sessão, CSRF, rate limiting e isolamento da carteira. Os testes de banco revertem suas fixtures por transação e recusam um banco diferente de `testing`; não usam `RefreshDatabase`, `migrate:fresh` ou reset. `BrazilianCurrencyTest` verifica centavos positivos/negativos e os limites de inteiro de 64 bits, sem float.
+Os testes padrão verificam a asserção unitária e a página inicial. `WalletSchemaTest` valida a integridade relacional; `AuthenticationTest` cobre cadastro e segurança de sessão; `WalletServiceTest` cobre movimentações, autorização, idempotência, reversões, falhas intermediárias e limites de BIGINT. Os testes de banco revertem suas fixtures por transação e recusam um banco diferente de `testing`; não usam `RefreshDatabase`, `migrate:fresh` ou reset. `BrazilianCurrencyTest` verifica centavos positivos/negativos e os limites de inteiro de 64 bits, sem float.
 
-Os testes HTTP substituem a integração Vite por `withoutVite()` para não depender de assets gerados. A compilação é validada separadamente com `npm run build`. Um teste ativa explicitamente o middleware CSRF, dispensado pelo Laravel nos testes comuns. Movimentações financeiras e suas garantias concorrentes ainda não estão implementadas nem testadas.
+Os testes HTTP substituem a integração Vite por `withoutVite()` para não depender de assets gerados. A compilação é validada separadamente com `npm run build`. Um teste ativa explicitamente o middleware CSRF, dispensado pelo Laravel nos testes comuns. A suíte financeira simula uma leitura inicial vazia e exercita colisão UNIQUE/rollback/replay reais, mas não contém processos/conexões simultâneos; testes sequenciais não comprovam todos os interleavings concorrentes.
+
+Para executar somente os testes financeiros:
+
+```powershell
+docker compose exec -T --user sail laravel.test php artisan test --filter=WalletServiceTest
+```
 
 Para aplicar PSR-12 ao código:
 
@@ -275,6 +281,40 @@ Implementação com guard `web`, sessão nativa, Form Requests e serviço de cad
 | HTTP | Início, cadastro e login responderam 200 com assets locais |
 | Banco e infraestrutura | Nenhuma migration alterada; containers, portas e volumes preservados |
 
-O npm 12 informou o bloqueio automático do postinstall do esbuild; o build concluiu com sucesso usando o pacote disponível, sem desabilitar essa política. A validação visual pelo navegador não foi automatizada nesta etapa; os fluxos foram verificados por testes HTTP e requisições ao servidor local.
+O npm 12 informou o bloqueio automático do postinstall do esbuild; o build concluiu com sucesso usando o pacote disponível, sem desabilitar essa política. Os fluxos foram verificados por testes HTTP e requisições locais. Após a entrega, o usuário confirmou a validação visual de início, cadastro, login, navegação e mensagens de login inválido.
 
 Não há depósitos, transferências, reversões, WalletService financeiro, recuperação de senha, painel administrativo ou integrações bancárias. Aguardar revisão antes de implementar movimentações.
+
+## Etapa 04A — Núcleo financeiro
+
+`app/Services/WalletService.php` fornece três métodos públicos, todos retornando `Operation` com `ledgerEntries` carregado:
+
+| Método | Entrada e comportamento |
+| --- | --- |
+| `deposit($actor, $amountCents, $idempotencyKey)` | Credita somente a carteira do ator; soma ao saldo atual, inclusive negativo. |
+| `transfer($actor, $destinationWalletId, $amountCents, $idempotencyKey)` | Deriva origem do ator, exige outro destinatário e saldo suficiente; grava débito/crédito. |
+| `reverse($actor, $originalOperationId, $idempotencyKey)` | Carrega a original no servidor, autoriza seu iniciador, compensa lançamentos e marca a original como `reversed`. |
+
+O ator é um `User` autenticado fornecido por código confiável; a futura camada HTTP deverá obtê-lo da sessão. O destino da transferência é ID de carteira. O serviço exige valor realmente `int`, positivo e representável no PHP de 64 bits, rejeitando strings e floats sem coerção. Chaves são obrigatórias, UTF-8, com até 128 caracteres, sem whitespace nas extremidades ou controles ASCII.
+
+Toda movimentação usa `DB::transaction()` e bloqueia carteiras em ordem crescente por PK. A reversão bloqueia primeiro a original e verifica seu histórico. Há até três tentativas nativas para erros de concorrência suportados pelo Laravel; a ordenação reduz, mas não elimina deadlocks. A chave UNIQUE é reservada antes dos efeitos financeiros. Em colisão idempotente, a tentativa perdedora sofre rollback antes de uma leitura atual da vencedora; ator e conteúdo diferentes produzem conflito genérico.
+
+Reversões autorizadas podem gerar saldo negativo, mas não ultrapassam BIGINT. Original e lançamentos são preservados; somente seu status muda. Uma original tem no máximo uma reversão. Repetições idempotentes, inclusive de originais já revertidas, não movimentam valores novamente.
+
+Rejeições de domínio têm exceções específicas em `app/Exceptions/Wallet`. Falhas SQL/cancelamento de save não retornam sucesso; a mensagem pública é genérica e a causa técnica é interna. Nenhuma credencial é registrada pelo serviço. Uma futura camada HTTP não deverá expor exceções, SQL ou stack traces.
+
+Limites conhecidos: não há auditoria/reparação automática de dados alterados por SQL fora do serviço; a igualdade saldo/histórico parte de uma base consistente. Em transação externa, o commit final e a recuperação de deadlocks dessa unidade maior pertencem ao chamador. Não foram implementados testes paralelos de concorrência; a simulação sequencial cobre somente o caminho de colisão e recuperação.
+
+Nenhuma migration, tabela, model, rota, controller, view ou configuração Docker foi alterada nesta etapa. Não há interface financeira, PIX, cartões, gateway ou integração bancária. Aguardar revisão antes de avançar à camada HTTP.
+
+Validação final da etapa 04A em 10/11/2026:
+
+| Verificação | Resultado |
+| --- | --- |
+| Suíte financeira | 57 testes aprovados, 475 asserções |
+| PHPUnit completo | 133 testes aprovados, 896 asserções |
+| Pint PSR-12 | 56 arquivos PHP aprovados |
+| Migrations | Seis existentes executadas; nenhum arquivo alterado e nenhum reset |
+| Engine | `wallets`, `operations` e `ledger_entries` em InnoDB |
+| Banco de desenvolvimento | Duas carteiras existentes, nenhuma movimentação criada pelos testes, zero divergências saldo/histórico |
+| Versionamento | Infraestrutura/interfaces preservadas; arquivos versionáveis inspecionados para segredos |

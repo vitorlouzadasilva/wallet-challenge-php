@@ -15,4 +15,4 @@
 - Usar o runtime oficial PHP 8.3 do Laravel Sail e os serviços `laravel.test`, `mysql` e `phpmyadmin`. Manter o phpMyAdmin restrito a `127.0.0.1:8089`, sem login automático.
 - Não executar `docker compose down -v`, `migrate:fresh`, exclusão de volumes ou outros comandos destrutivos sem autorização explícita.
 - Não sobrescrever nem remover arquivos preexistentes do usuário sem autorização.
-- A etapa 03 autoriza cadastro transacional com carteira inicial, autenticação por sessão e interface inicial em Blade/Bootstrap 5. Aguardar revisão antes de implementar controllers financeiros, WalletService financeiro, depósitos, transferências, reversões, recuperação de senha e painel administrativo.
+- A etapa 04A autoriza WalletService, exceções de domínio, testes e documentação para depósitos, transferências e reversões. Manter as migrations existentes. Aguardar revisão antes de implementar controllers/Form Requests financeiros, formulários, extrato visual, integrações bancárias, recuperação de senha e painel administrativo.

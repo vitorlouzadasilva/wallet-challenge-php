@@ -1,6 +1,6 @@
 # Arquitetura da carteira financeira
 
-A etapa 02 adicionou esquema relacional, models e testes de integridade. A etapa 03 implementa cadastro transacional, autenticação por sessão e interface inicial. Controllers financeiros, WalletService e movimentações ainda não existem. O comportamento transacional financeiro descrito aqui continua planejado para uma etapa posterior.
+A etapa 02 adicionou esquema relacional e models; a etapa 03 implementou cadastro, sessão e interface inicial. A etapa 04A implementa o núcleo financeiro em `WalletService`, com depósitos, transferências e reversões transacionais. Não existem controllers, Form Requests ou interfaces financeiras; o serviço é exercitado diretamente pelos testes no MySQL `testing`.
 
 ## Estrutura MVC e responsabilidades
 
@@ -10,7 +10,9 @@ A etapa 02 adicionou esquema relacional, models e testes de integridade. A etapa
 - `resources/views/`: layout compartilhado e páginas de início, cadastro, login e dashboard em Blade/Bootstrap 5 local.
 - `database/migrations/`: evolução e integridade do esquema; migrations padrão executadas permanecem intactas.
 - `tests/Feature/WalletSchemaTest.php`: restrições verificadas no MySQL `testing`, com fixtures revertidas por transação, sem reset de banco.
-- Futura `app/Services/WalletService.php`: coordenará depósitos, transferências e reversões. Não foi criada nesta etapa.
+- `app/Services/WalletService.php`: coordena depósitos, transferências, reversões, autorização de domínio, locks, idempotência e persistência financeira.
+- `app/Exceptions/Wallet/`: diferencia rejeições de domínio e falhas de persistência, com mensagens públicas sem SQL.
+- `tests/Feature/WalletServiceTest.php`: valida casos de uso, falhas transacionais, replay, integridade dos lançamentos e limites monetários no MySQL `testing`.
 
 Usar Eloquent e os recursos transacionais do Laravel. Form Requests validam as entradas de autenticação. Policies/Gates financeiros serão definidos com os casos de uso futuros, junto às verificações do serviço. Não adicionar repositórios, interfaces ou patterns sem necessidade concreta.
 
@@ -18,7 +20,7 @@ Usar Eloquent e os recursos transacionais do Laravel. Form Requests validam as e
 
 `RegisterRequest` valida nome, e-mail único normalizado e senha confirmada. `RegisteredUserController` recebe o serviço concreto `RegisterUser` por injeção de dependência. Esse serviço usa `DB::transaction()` para criar usuário com `Hash::make()` e uma carteira vinculada ao usuário recém-criado, com zero centavos. Uma falha na carteira desfaz também o usuário; não cria operação ou lançamento inicial. A restrição única de usuário continua impedindo carteiras duplicadas.
 
-O controller inicia a sessão somente após o serviço retornar com sucesso. Falhas SQL do cadastro geram mensagem genérica sem expor ou registrar SQL, parâmetros ou hashes de senha. Não há observer de `User`: factories e usuários antigos não recebem carteiras silenciosamente. A responsabilidade do serviço é cadastro, não execução financeira; não existe WalletService financeiro.
+O controller inicia a sessão somente após o serviço retornar com sucesso. Falhas SQL do cadastro geram mensagem genérica sem expor ou registrar SQL, parâmetros ou hashes de senha. Não há observer de `User`: factories e usuários antigos não recebem carteiras silenciosamente. `RegisterUser` continua responsável apenas pelo cadastro; `WalletService` é um serviço separado para movimentações.
 
 `LoginRequest` valida credenciais e usa `Auth::attempt()` com o guard `web`, provider Eloquent e sessão nativa. Mensagens de falha não distinguem e-mail inexistente de senha incorreta. RateLimiter nativo limita cinco falhas por e-mail/IP e vinte por IP em 60 segundos, com chaves em hash. O sucesso limpa o contador do par; não elimina o limite global do IP. `PasswordByteLimit` é uma regra compartilhada pelos dois formulários para rejeitar mais de 72 bytes e evitar truncamento do bcrypt.
 
@@ -26,7 +28,7 @@ Após login/cadastro, a sessão é regenerada. Logout é somente POST autenticad
 
 `DashboardController` consulta exclusivamente `$request->user()->wallet()`. Parâmetros `user_id`/`wallet_id` da requisição não selecionam registros. Carteira ausente em usuários antigos produz mensagem e não cria dados na consulta. `BrazilianCurrency` formata centavos como texto, sem float e cobrindo os limites de inteiro de 64 bits. Os valores exibidos são escapados pelo Blade.
 
-O frontend usa Bootstrap 5.3.8, CSS próprio e o componente Collapse para navegação móvel. Vite compila todos os assets locais, sem CDN ou fontes externas. Não há novo pacote PHP, Repository Pattern, interfaces artificiais ou operações financeiras. A separação entre Request, controller, serviço, model e apresentação aplica responsabilidade única sem abstrações extras.
+O frontend usa Bootstrap 5.3.8, CSS próprio e o componente Collapse para navegação móvel. Vite compila todos os assets locais, sem CDN ou fontes externas. Não há novo pacote PHP, Repository Pattern, interfaces artificiais ou interface financeira. A separação entre Request, controller, serviço, model e apresentação aplica responsabilidade única sem abstrações extras.
 
 ## Entidades e relacionamentos
 
@@ -50,7 +52,7 @@ erDiagram
 
 A FK única de usuário garante **no máximo uma** carteira, não obriga a existência de uma. O fluxo de cadastro da etapa 03 cria usuário e carteira atomicamente; usuários antigos não são alterados nem recebem carteira automaticamente.
 
-Models financeiros mantêm a proteção padrão do Eloquent contra mass assignment. O futuro serviço atribuirá atributos explicitamente a partir de dados validados. Não passar `request()->all()` a `create()`, `update()` ou `forceFill()`. `forceCreate()` aparece apenas nas fixtures.
+Models financeiros mantêm a proteção padrão do Eloquent contra mass assignment. `WalletService` monta atributos internos validados e os atribui explicitamente. Não passar `request()->all()` a `create()`, `update()` ou `forceFill()`. `forceCreate()` aparece apenas nas fixtures.
 
 ## Tipos, restrições e índices
 
@@ -77,7 +79,7 @@ Oito `CHECK`s são aplicados:
 7. `operations_wallet_shape`: depósito tem apenas destino; transferência tem duas carteiras distintas; reversão tem ao menos uma carteira e, se houver duas, são distintas.
 8. `ledger_entries_delta_nonzero`: lançamento diferente de zero.
 
-`type`, `status` e `idempotency_key` usam `utf8mb4_bin`, sensível a maiúsculas/minúsculas. A chave possui até 128 caracteres. O futuro contrato HTTP rejeitará espaços nas extremidades; a comparação de espaços finais ainda segue a collation MySQL. Recomenda-se UUID canônico para clientes, sem exigir seu formato no esquema atual.
+`type`, `status` e `idempotency_key` usam `utf8mb4_bin`, sensível a maiúsculas/minúsculas. O serviço exige chave UTF-8 não vazia de até 128 caracteres, sem whitespace nas extremidades nem controles ASCII. Não normaliza a chave e compara o texto exato no replay, evitando tratar como iguais chaves legadas diferentes pela semântica de espaços finais do MySQL. Recomenda-se UUID canônico para clientes, sem impor esse formato.
 
 ## Ciclo de vida e auditoria
 
@@ -87,30 +89,57 @@ Uma reversão cria outra operação `completed`, referencia a original e insere 
 
 `reversed` é terminal. Uma operação de tipo `reversal` não poderá ser revertida. A referência original única impede múltiplas reversões; como só se registram reversões confirmadas, não é necessário índice parcial por status.
 
-## Transações e concorrência planejadas
+## API pública do WalletService
 
-Toda movimentação futura usará `DB::transaction()`. Operação, lançamentos, saldos e status da original em reversões pertencem ao mesmo commit.
+Todos os métodos retornam `Operation`, com a relação `ledgerEntries` carregada. O ator deve ser o `User` autenticado e persistido fornecido pelo chamador confiável; o serviço não depende da facade Auth, de HTTP ou de parâmetros de sessão. A futura camada HTTP deverá usar `$request->user()`, nunca um iniciador escolhido no formulário.
 
-O serviço deverá autenticar/autorizar o ator, validar centavos e limites, tratar idempotência e obter `lockForUpdate()` nas carteiras. Bloquear carteiras em ordem crescente de `id` em todos os fluxos reduz deadlocks. Verificar saldo suficiente somente depois do bloqueio.
+| Método | Responsabilidade |
+| --- | --- |
+| `deposit(User $actor, mixed $amountCents, string $idempotencyKey): Operation` | Descobre a carteira do ator, credita o valor e registra depósito/lançamento. Não recebe carteira de terceiros. |
+| `transfer(User $actor, int $destinationWalletId, mixed $amountCents, string $idempotencyKey): Operation` | Descobre a origem pelo ator; destino é ID de **carteira**, não de usuário; exige outro proprietário e saldo suficiente. |
+| `reverse(User $actor, int $originalOperationId, string $idempotencyKey): Operation` | Carrega original e participantes no servidor, valida autorização, compensa lançamentos e altera somente o status da original. |
 
-Reversões bloquearão primeiro a operação original, verificarão tipo, estado e ausência de reversão e depois bloquearão as carteiras na ordem definida. Revalidar autorização dentro da transação. Deadlocks terão repetição limitada da unidade transacional, sem repetir efeitos externos.
+`mixed` nos valores é intencional: a fronteira exige `is_int()` e rejeita strings, floats, booleanos, zero e negativos com `InvalidAmount`. Uma assinatura `int` isolada permitiria coerção silenciosa por chamadores PHP sem `strict_types`. Após a validação, os auxiliares monetários recebem somente inteiros. O runtime deve ser de 64 bits. O futuro Form Request financeiro precisará validar e converter a representação de entrada sem float e sem ultrapassar BIGINT.
 
-A chave idempotente única é a proteção final contra corridas. Comparar iniciador e conteúdo financeiro da operação existente. Mesma chave com conteúdo diferente gera conflito. Em disputa concorrente, reverter a transação perdedora antes de recuperar a vencedora e reaplicar as verificações de autorização. Não capturar violação de unicidade e continuar uma movimentação incompleta.
+## Transações e bloqueios implementados
+
+Cada chamada usa `DB::transaction()`, incluindo operação, lançamentos, saldos e, em reversões, status da original. O estado `completed` é escrito dentro da transação e só fica visível após o commit. Falhas desfazem também a operação recém-inserida; lacunas de AUTO_INCREMENT após rollback são normais.
+
+As carteiras são bloqueadas por consultas individuais à PK com `lockForUpdate()`, em ordem crescente de `id`. Isso torna a ordem de aquisição explícita, sem depender do plano de execução de `WHERE IN`. Propriedade, saldo disponível e aritmética são verificados nos registros bloqueados. A soma testa limites antes de calcular, impedindo promoção a float por overflow/underflow.
+
+Reversões bloqueiam primeiro a original, validam iniciador/tipo, bloqueiam as carteiras em ordem crescente e revalidam a propriedade da carteira original do ator. O replay usa leitura com bloqueio antes de rejeitar status `reversed`. Uma nova reversão exige original `completed`; a referência única é a garantia final contra duplicação.
+
+O serviço verifica se os lançamentos da original correspondem exatamente ao tipo, valor e participantes persistidos, usando leitura bloqueada. Histórico ausente ou adulterado produz `LogicException`, sem compensar valores indevidos. Os lançamentos compensatórios têm sinais opostos e permitem saldo negativo, mas respeitam BIGINT. Valor, participantes e lançamentos originais permanecem intactos.
+
+O Laravel pode repetir a unidade transacional até três vezes nos erros de concorrência suportados por `DB::transaction`. Os modelos são recarregados dentro de cada tentativa. Ordenação reduz deadlocks; não elimina todos, incluindo os causados por índices únicos/gap locks.
+
+## Idempotência e recuperação de colisões
+
+1. Montar dados canônicos no servidor: iniciador, tipo, valor, origem, destino, chave e referência original.
+2. Procurar replay; comparar ator e todos esses dados. Status é excluído da comparação para permitir repetir uma original já `reversed`, sem novo efeito.
+3. Para uma chamada nova, bloquear carteiras e inserir a operação antes da validação dependente do saldo e antes de qualquer alteração financeira. Isso reserva a chave pelo `UNIQUE`.
+4. Caso uma concorrente já tenha usado a chave, a violação 1062 sai de `DB::transaction`, que desfaz a tentativa perdedora. O serviço não continua a transação falha.
+5. Somente para o índice `operations_idempotency_key_unique`, iniciar uma nova tentativa com leitura atual `FOR UPDATE` e recuperar a vencedora. A leitura atual evita um snapshot antigo em REPEATABLE READ. Se não houver vencedora visível, falhar sem criar outra movimentação.
+6. Retornar a mesma operação apenas se ator e conteúdo coincidirem; caso contrário, lançar `IdempotencyConflict` genérico, sem devolver dados de outro usuário.
+
+A recuperação de colisão é limitada a uma nova unidade transacional. A detecção utiliza o nome do índice no final do erro nativo do MySQL; não interpreta valores do cliente como nomes de índices. Uma duplicidade em `ledger_entries` não vira replay nem sucesso. Uma duplicidade da referência original vira `OperationAlreadyReversed` após rollback.
+
+## Falhas e exceções
+
+As classes em `app/Exceptions/Wallet` distinguem valor/chave inválidos, carteira ausente, falta de autorização, saldo insuficiente, conflito idempotente, operação inválida/já revertida e limite de saldo. `FinancialPersistenceException` sinaliza falha SQL ou cancelamento de `save()` por evento Eloquent, com mensagem pública genérica. A causa SQL fica em `previous` apenas para diagnóstico interno; uma futura resposta HTTP não deverá serializar exceções, SQL ou stack traces.
+
+Não há catch de `Throwable` retornando sucesso. Erros de programação e integridade histórica propagam após rollback. Nenhuma senha, sessão ou credencial é registrada pelo serviço. O chamador só recebe sucesso após a transação controlada pelo serviço concluir.
 
 ## Limites para revisão
 
-FKs e `CHECK`s não garantem condições entre múltiplas linhas/tabelas. A futura camada de serviço deverá assegurar:
+- Os testes financeiros usam MySQL e rollback externo, preservando dados existentes. A simulação de uma primeira leitura vazia exercita INSERT, UNIQUE, rollback e recuperação reais, mas **não é um teste de concorrência com processos/conexões independentes**. Não há comprovação experimental de todos os interleavings nem teste de carga.
+- O uso normal deve deixar o serviço controlar a transação externa. Chamadas aninhadas usam savepoints; o commit final pertence ao chamador externo, que também deve tratar a repetição de toda a transação em caso de deadlock. Liberar um savepoint não equivale a um commit durável nem necessariamente libera todos os locks.
+- A igualdade saldo/soma dos lançamentos é preservada a partir de cadastro com zero e histórico consistente. Não há conciliação completa de todo o extrato a cada operação nem reparação de saldo adulterado por SQL. Os testes verificam essa igualdade, inclusive nos extremos de BIGINT.
+- O serviço autoriza com base no ator recebido; não substitui a autenticação do futuro controller. Não há HTTP ou interface financeira nesta etapa.
+- Não há triggers/observers financeiros. A unicidade `(operation_id, wallet_id)` assume um lançamento por carteira em cada operação. Depósitos são entradas simuladas, sem conta externa de contrapartida; não é uma contabilidade geral de partidas dobradas.
+- FKs impedem exclusões de pais, mas não tornam folhas imutáveis contra SQL direto. Models retornados devem ser tratados como histórico pelos chamadores. Não há API de exclusão/edição financeira no serviço.
 
-- Existência de carteira para usuários antigos e autorização dos futuros casos de uso financeiros. O cadastro novo já cria a carteira e o dashboard já restringe a consulta ao ator.
-- Conciliação do saldo materializado com a soma dos lançamentos.
-- Exatamente um crédito por depósito e dois lançamentos opostos por transferência, pelos valores corretos.
-- Correspondência entre carteiras dos lançamentos e da operação.
-- Mesmo valor e participantes invertidos na reversão; original de tipo depósito/transferência, ainda `completed`.
-- Atualização conjunta do histórico e do status, autorização e imutabilidade dos registros confirmados.
-
-Não há triggers ou observers executando regras silenciosamente. A unicidade `(operation_id, wallet_id)` assume um lançamento por carteira em cada operação deste desafio. Depósitos são entradas simuladas; sem conta externa de contrapartida, este modelo não é uma contabilidade geral de partidas dobradas.
-
-FKs impedem exclusões de pais referenciados, mas não tornam lançamentos folha imutáveis contra SQL direto. Models não autorizam acesso apenas por exporem relacionamentos. Ver [BUSINESS_RULES.md](BUSINESS_RULES.md) para o contrato de autorização.
+Ver [BUSINESS_RULES.md](BUSINESS_RULES.md) para o contrato de autorização. A camada HTTP futura deverá traduzir exceções para respostas sanitizadas e validar sua entrada, sem enfraquecer as regras do serviço.
 
 ## Organização e segurança
 
@@ -121,3 +150,5 @@ Não registrar credenciais ou conteúdo do `.env` em logs, respostas e commits. 
 Referências: [migrations Laravel 12](https://laravel.com/docs/12.x/migrations), [CHECKs MySQL 8.4](https://dev.mysql.com/doc/refman/8.4/en/create-table-check-constraints.html), [imagem oficial phpMyAdmin](https://hub.docker.com/_/phpmyadmin) e [OWASP Top 10:2025](https://owasp.org/Top10/2025/).
 
 Referências da etapa 03: [autenticação nativa Laravel 12](https://laravel.com/docs/12.x/authentication), [RateLimiter](https://laravel.com/docs/12.x/rate-limiting) e [Bootstrap com Vite](https://getbootstrap.com/docs/5.3/getting-started/vite/).
+
+Referências da etapa 04A: [transações Laravel 12](https://laravel.com/docs/12.x/database#database-transactions), [bloqueios pessimistas](https://laravel.com/docs/12.x/queries#pessimistic-locking) e [isolamento InnoDB 8.4](https://dev.mysql.com/doc/refman/8.4/en/innodb-transaction-isolation-levels.html).
