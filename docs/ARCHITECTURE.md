@@ -1,18 +1,32 @@
 # Arquitetura da carteira financeira
 
-A etapa 02 adiciona esquema relacional, models e testes de integridade. Controllers financeiros, WalletService, autenticação, movimentações e interfaces ainda não existem. O comportamento transacional descrito aqui é planejado para a próxima etapa.
+A etapa 02 adicionou esquema relacional, models e testes de integridade. A etapa 03 implementa cadastro transacional, autenticação por sessão e interface inicial. Controllers financeiros, WalletService e movimentações ainda não existem. O comportamento transacional financeiro descrito aqui continua planejado para uma etapa posterior.
 
 ## Estrutura MVC e responsabilidades
 
-- `routes/`: mantém as rotas padrão; futuramente encaminhará requisições autenticadas.
-- `app/Http/Controllers/`: coordenará entrada e resposta, delegando casos de uso ao serviço. Não deverá calcular saldos.
+- `routes/`: agrupa rotas de visitantes em `guest` e dashboard/logout em `auth`, sem lógica de aplicação nas closures.
+- `app/Http/Controllers/`: coordena entrada e resposta; os controllers de autenticação usam recursos nativos e delegam criação de conta ao serviço. Nenhum controller calcula ou modifica saldos financeiros.
 - `app/Models/`: dados, casts e relacionamentos Eloquent; nenhuma movimentação automática.
-- `resources/views/`: página padrão Laravel. Blade e Bootstrap 5 serão tratados posteriormente.
+- `resources/views/`: layout compartilhado e páginas de início, cadastro, login e dashboard em Blade/Bootstrap 5 local.
 - `database/migrations/`: evolução e integridade do esquema; migrations padrão executadas permanecem intactas.
 - `tests/Feature/WalletSchemaTest.php`: restrições verificadas no MySQL `testing`, com fixtures revertidas por transação, sem reset de banco.
 - Futura `app/Services/WalletService.php`: coordenará depósitos, transferências e reversões. Não foi criada nesta etapa.
 
-Usar Eloquent e os recursos transacionais do Laravel. Form Requests validarão entradas e Policies/Gates cuidarão de autorização, junto às verificações do serviço. Não adicionar repositórios, interfaces ou patterns sem necessidade concreta.
+Usar Eloquent e os recursos transacionais do Laravel. Form Requests validam as entradas de autenticação. Policies/Gates financeiros serão definidos com os casos de uso futuros, junto às verificações do serviço. Não adicionar repositórios, interfaces ou patterns sem necessidade concreta.
+
+## Cadastro e autenticação implementados na etapa 03
+
+`RegisterRequest` valida nome, e-mail único normalizado e senha confirmada. `RegisteredUserController` recebe o serviço concreto `RegisterUser` por injeção de dependência. Esse serviço usa `DB::transaction()` para criar usuário com `Hash::make()` e uma carteira vinculada ao usuário recém-criado, com zero centavos. Uma falha na carteira desfaz também o usuário; não cria operação ou lançamento inicial. A restrição única de usuário continua impedindo carteiras duplicadas.
+
+O controller inicia a sessão somente após o serviço retornar com sucesso. Falhas SQL do cadastro geram mensagem genérica sem expor ou registrar SQL, parâmetros ou hashes de senha. Não há observer de `User`: factories e usuários antigos não recebem carteiras silenciosamente. A responsabilidade do serviço é cadastro, não execução financeira; não existe WalletService financeiro.
+
+`LoginRequest` valida credenciais e usa `Auth::attempt()` com o guard `web`, provider Eloquent e sessão nativa. Mensagens de falha não distinguem e-mail inexistente de senha incorreta. RateLimiter nativo limita cinco falhas por e-mail/IP e vinte por IP em 60 segundos, com chaves em hash. O sucesso limpa o contador do par; não elimina o limite global do IP. `PasswordByteLimit` é uma regra compartilhada pelos dois formulários para rejeitar mais de 72 bytes e evitar truncamento do bcrypt.
+
+Após login/cadastro, a sessão é regenerada. Logout é somente POST autenticado, chama `logout()`, invalida a sessão e regenera CSRF. Formulários usam `@csrf`, e senhas nunca usam `old()` nem são registradas em logs pela aplicação. Não há recuperação de senha ou autenticação persistente por remember-me.
+
+`DashboardController` consulta exclusivamente `$request->user()->wallet()`. Parâmetros `user_id`/`wallet_id` da requisição não selecionam registros. Carteira ausente em usuários antigos produz mensagem e não cria dados na consulta. `BrazilianCurrency` formata centavos como texto, sem float e cobrindo os limites de inteiro de 64 bits. Os valores exibidos são escapados pelo Blade.
+
+O frontend usa Bootstrap 5.3.8, CSS próprio e o componente Collapse para navegação móvel. Vite compila todos os assets locais, sem CDN ou fontes externas. Não há novo pacote PHP, Repository Pattern, interfaces artificiais ou operações financeiras. A separação entre Request, controller, serviço, model e apresentação aplica responsabilidade única sem abstrações extras.
 
 ## Entidades e relacionamentos
 
@@ -34,7 +48,7 @@ erDiagram
 | `Operation` | Registro de movimentação confirmada; `initiatedByUser()`, `sourceWallet()`, `destinationWallet()`, `ledgerEntries()`, `originalOperation()` e `reversal()`. |
 | `LedgerEntry` | Débito ou crédito; pertence a `operation()` e `wallet()`. |
 
-A FK única de usuário garante **no máximo uma** carteira, não obriga a existência de uma. A criação junto ao futuro cadastro será transacional; nenhum usuário existente recebe carteira automaticamente nesta etapa.
+A FK única de usuário garante **no máximo uma** carteira, não obriga a existência de uma. O fluxo de cadastro da etapa 03 cria usuário e carteira atomicamente; usuários antigos não são alterados nem recebem carteira automaticamente.
 
 Models financeiros mantêm a proteção padrão do Eloquent contra mass assignment. O futuro serviço atribuirá atributos explicitamente a partir de dados validados. Não passar `request()->all()` a `create()`, `update()` ou `forceFill()`. `forceCreate()` aparece apenas nas fixtures.
 
@@ -87,7 +101,7 @@ A chave idempotente única é a proteção final contra corridas. Comparar inici
 
 FKs e `CHECK`s não garantem condições entre múltiplas linhas/tabelas. A futura camada de serviço deverá assegurar:
 
-- Existência obrigatória de carteira e propriedade pelo ator.
+- Existência de carteira para usuários antigos e autorização dos futuros casos de uso financeiros. O cadastro novo já cria a carteira e o dashboard já restringe a consulta ao ator.
 - Conciliação do saldo materializado com a soma dos lançamentos.
 - Exatamente um crédito por depósito e dois lançamentos opostos por transferência, pelos valores corretos.
 - Correspondência entre carteiras dos lançamentos e da operação.
@@ -105,3 +119,5 @@ O phpMyAdmin oficial `phpmyadmin:5.2.3-apache` publica apenas `127.0.0.1:8089`, 
 Não registrar credenciais ou conteúdo do `.env` em logs, respostas e commits. A conta MySQL local permite manutenção de esquema; uma futura produção exigirá permissões mínimas e proteção específica do histórico. Não operar dados financeiros reais nesta simulação.
 
 Referências: [migrations Laravel 12](https://laravel.com/docs/12.x/migrations), [CHECKs MySQL 8.4](https://dev.mysql.com/doc/refman/8.4/en/create-table-check-constraints.html), [imagem oficial phpMyAdmin](https://hub.docker.com/_/phpmyadmin) e [OWASP Top 10:2025](https://owasp.org/Top10/2025/).
+
+Referências da etapa 03: [autenticação nativa Laravel 12](https://laravel.com/docs/12.x/authentication), [RateLimiter](https://laravel.com/docs/12.x/rate-limiting) e [Bootstrap com Vite](https://getbootstrap.com/docs/5.3/getting-started/vite/).

@@ -1,8 +1,8 @@
 # Wallet PHP — Grupo Adriano Cobuccio
 
-Infraestrutura do desafio técnico Fullstack PHP do Grupo Adriano Cobuccio. O objetivo final é uma carteira financeira com cadastro, autenticação, depósitos, transferências e reversões, conforme o documento fornecido em `../regras_desafio/desafio fullstack PHP.docx`.
+Aplicação do desafio técnico Fullstack PHP do Grupo Adriano Cobuccio. O objetivo final é uma carteira financeira com cadastro, autenticação, depósitos, transferências e reversões, conforme o documento fornecido em `../regras_desafio/desafio fullstack PHP.docx`.
 
-A etapa 02 adiciona phpMyAdmin, models e esquema financeiro, preservando a página inicial e as migrations padrão. Regras documentadas em [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) e decisões em [ARCHITECTURE.md](docs/ARCHITECTURE.md) aguardam revisão antes de implementar serviços, autenticação e funcionalidades da carteira.
+A etapa 03 implementa cadastro com carteira inicial, login/logout por sessão e dashboard individual em Blade/Bootstrap. As migrations existentes foram preservadas. Depósitos, transferências e reversões permanecem somente documentados em [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) e [ARCHITECTURE.md](docs/ARCHITECTURE.md), aguardando revisão antes da implementação financeira.
 
 ## Stack
 
@@ -12,7 +12,7 @@ A etapa 02 adiciona phpMyAdmin, models e esquema financeiro, preservando a pági
 - phpMyAdmin 5.2.3 oficial, somente no loopback local.
 - Composer com autoload PSR-4 e dependências fixadas em `composer.lock`.
 - PHPUnit e Laravel Pint com preset PSR-12 em `pint.json`.
-- Bootstrap 5 previsto para a próxima etapa; ainda não instalado. Os arquivos frontend são os originais do skeleton Laravel, que inclui Tailwind/Vite sem instalação de pacotes Node nesta etapa.
+- Bootstrap 5.3.8 instalado localmente, compilado com Vite e fixado em `package-lock.json`. Sem CDN, fontes externas ou biblioteca adicional de interface.
 
 ## Requisitos
 
@@ -23,7 +23,7 @@ A etapa 02 adiciona phpMyAdmin, models e esquema financeiro, preservando a pági
 - Acesso à internet para baixar pacotes e construir as imagens oficiais.
 - Portas locais 8088, 3309 e 8089 livres.
 
-Após o bootstrap, executar os comandos PHP e Artisan dentro do Docker. Node não é necessário para abrir a página padrão nesta etapa.
+Após o bootstrap, executar PHP, Artisan e npm dentro do Docker. O Sail já fornece Node e npm; não é necessário instalar Node no Windows. As páginas dependem da compilação inicial dos assets descrita abaixo.
 
 ## Inicialização no PowerShell
 
@@ -83,7 +83,38 @@ docker compose exec -T --user sail laravel.test php artisan migrate
 docker compose exec -T --user sail laravel.test php artisan migrate:status
 ```
 
+Instale as dependências frontend pelo lock e compile os assets locais:
+
+```powershell
+docker compose exec -T --user sail laravel.test npm ci
+docker compose exec -T --user sail laravel.test npm run build
+```
+
+Repita `npm run build` após alterar CSS ou JavaScript. O resultado em `public/build` não é versionado; `package.json` e `package-lock.json` são. Os assets compilados são servidos pela porta 8088 e não precisam de um servidor Vite ou de CDN durante a apresentação.
+
 Acesse **http://localhost:8088**. A primeira construção pode demorar devido aos pacotes incluídos pelo runtime oficial do Sail. O Docker Compose aguarda o healthcheck do MySQL antes de iniciar a aplicação.
+
+## Funcionalidades e criação de usuário
+
+- Página inicial com acesso ao cadastro e ao login.
+- Cadastro com nome, e-mail, senha e confirmação; usuário e carteira com saldo zero são gravados em uma única transação.
+- Login por e-mail/senha, renovação da sessão, logout com invalidação da sessão e renovação do token CSRF.
+- Dashboard autenticado com nome e saldo da própria carteira em reais; área de movimentações reservada para etapa futura.
+- Validação em português, escaping do Blade, CSRF e limite de tentativas de login.
+
+Para criar um usuário, abra **http://localhost:8088/register**, preencha os campos e confirme. A senha exige pelo menos 12 caracteres e no máximo 72 bytes, para respeitar o bcrypt sem truncamento; caracteres acentuados podem ocupar mais de um byte. O cadastro normaliza o e-mail para minúsculas, protege a senha com Hash do Laravel e inicia a sessão após o commit. Não há credenciais de demonstração nem seed necessário para acessar a aplicação.
+
+Login em **http://localhost:8088/login**; após autenticar, o dashboard fica em **http://localhost:8088/dashboard**. Use o botão **Sair** para encerrar a sessão. Usuários antigos criados fora do fluxo e sem carteira recebem uma mensagem no dashboard; a consulta não cria carteira nem altera saldo.
+
+| Método | Rota | Acesso |
+| --- | --- | --- |
+| GET | `/` | Público |
+| GET / POST | `/register` | Visitante |
+| GET / POST | `/login` | Visitante |
+| GET | `/dashboard` | Autenticado |
+| POST | `/logout` | Autenticado, com CSRF |
+
+O login utiliza mensagem genérica para e-mail/senha incorretos. São permitidas cinco falhas por e-mail/IP e vinte por IP em 60 segundos. Um login válido limpa o contador do par e-mail/IP; o limite global do IP permanece até expirar. As chaves do cache usam hashes, sem e-mail/IP em texto claro.
 
 ## Serviços e persistência
 
@@ -129,7 +160,9 @@ docker compose exec -T --user sail laravel.test php artisan test
 docker compose exec -T --user sail laravel.test php vendor/bin/pint --test
 ```
 
-Os testes padrão verificam a asserção unitária e a página inicial. `WalletSchemaTest` valida FKs, exclusões restritivas, unicidade, `CHECK`s, tipos, índices e relacionamentos no MySQL. Cada teste reverte suas fixtures por transação e recusa um banco diferente de `testing`; não usa `RefreshDatabase`, `migrate:fresh` ou reset. As regras de movimentação e concorrência ainda não estão implementadas nem testadas.
+Os testes padrão verificam a asserção unitária e a página inicial. `WalletSchemaTest` valida a integridade relacional; `AuthenticationTest` cobre cadastro, rollback, sessão, CSRF, rate limiting e isolamento da carteira. Os testes de banco revertem suas fixtures por transação e recusam um banco diferente de `testing`; não usam `RefreshDatabase`, `migrate:fresh` ou reset. `BrazilianCurrencyTest` verifica centavos positivos/negativos e os limites de inteiro de 64 bits, sem float.
+
+Os testes HTTP substituem a integração Vite por `withoutVite()` para não depender de assets gerados. A compilação é validada separadamente com `npm run build`. Um teste ativa explicitamente o middleware CSRF, dispensado pelo Laravel nos testes comuns. Movimentações financeiras e suas garantias concorrentes ainda não estão implementadas nem testadas.
 
 Para aplicar PSR-12 ao código:
 
@@ -228,3 +261,20 @@ Foram adicionadas `wallets`, `operations` e `ledger_entries`, com seus models El
 O controle automatizado do navegador foi interrompido pela ferramenta por não conseguir confirmar a URL da janela no Windows. A validação visual e o login interativo no navegador permanecem pendentes; as verificações HTTP e de conexão a partir do container foram realizadas. A inclusão isolada da configuração do phpMyAdmin via CLI emitiu avisos por variáveis opcionais ausentes; o endpoint HTTP não exibiu esses avisos. A imagem Apache também emite aviso de `ServerName` ausente, sem bloquear o serviço.
 
 Decisões e limites estão em [ARCHITECTURE.md](docs/ARCHITECTURE.md) e [BUSINESS_RULES.md](docs/BUSINESS_RULES.md). O saldo admite negativos; `amount_cents` exige valor positivo; o histórico de reversões usa referência original única e estados `completed`/`reversed`. O esquema não executa nem substitui autorização, conciliação, idempotência transacional ou controles concorrentes do futuro serviço. Nenhum serviço financeiro, controller, autenticação ou interface foi implementado. Aguardar revisão antes da próxima etapa.
+
+## Etapa 03 — Autenticação e dashboard
+
+Implementação com guard `web`, sessão nativa, Form Requests e serviço de cadastro transacional. Nenhum pacote PHP de autenticação foi adicionado. Bootstrap é a dependência de interface solicitada; `@popperjs/core` é uma dependência peer transitiva do próprio Bootstrap. Tailwind e Axios, não utilizados nestas telas, foram removidos. Apenas o componente Collapse do JavaScript Bootstrap é importado para a navegação móvel, sem plugins de interface adicionais.
+
+| Validação em 10/11/2026 | Resultado |
+| --- | --- |
+| PHPUnit | 76 testes aprovados, 421 asserções, incluindo a suíte anterior |
+| Pint PSR-12 | 44 arquivos PHP aprovados |
+| Frontend | Build Vite concluído, Bootstrap 5.3.8 local, npm sem vulnerabilidades reportadas na instalação |
+| Rotas | Sete rotas da aplicação conferidas pelo Artisan; `/up` do framework preservada |
+| HTTP | Início, cadastro e login responderam 200 com assets locais |
+| Banco e infraestrutura | Nenhuma migration alterada; containers, portas e volumes preservados |
+
+O npm 12 informou o bloqueio automático do postinstall do esbuild; o build concluiu com sucesso usando o pacote disponível, sem desabilitar essa política. A validação visual pelo navegador não foi automatizada nesta etapa; os fluxos foram verificados por testes HTTP e requisições ao servidor local.
+
+Não há depósitos, transferências, reversões, WalletService financeiro, recuperação de senha, painel administrativo ou integrações bancárias. Aguardar revisão antes de implementar movimentações.

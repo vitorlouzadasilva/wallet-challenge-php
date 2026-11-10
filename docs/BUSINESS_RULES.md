@@ -1,10 +1,10 @@
 # Regras de negócio da carteira
 
-Contrato planejado para a simulação financeira. Nesta etapa existem apenas esquema, relacionamentos e testes de integridade. Nenhuma API de movimentação, autenticação, autorização ou WalletService está implementada.
+Contrato para a simulação financeira. Cadastro com carteira inicial, sessão autenticada e consulta do próprio saldo foram implementados na etapa 03. As regras de movimentação continuam planejadas; nenhuma API financeira, autorização de movimentações ou WalletService está implementada.
 
 ## RN01 — Usuário possui carteira individual
 
-Cada usuário deverá possuir uma carteira exclusiva. A FK única `wallets.user_id` garante no máximo uma; o futuro cadastro criará usuário e carteira na mesma transação. Não há carteira compartilhada nem troca de proprietário prevista. Usuários existentes não recebem carteiras automaticamente nesta etapa.
+Cada usuário deverá possuir uma carteira exclusiva. A FK única `wallets.user_id` garante no máximo uma; o cadastro da etapa 03 cria usuário e carteira com saldo zero na mesma transação. Falha na criação da carteira desfaz o usuário. Não há carteira compartilhada nem troca de proprietário prevista. Usuários antigos criados fora desse fluxo não recebem carteiras automaticamente.
 
 ## RN02 — Depósitos exigem valor positivo
 
@@ -76,7 +76,7 @@ Exemplo: transferência original de 1.000 centavos; destinatário possui apenas 
 
 ## RN14 — Valores financeiros são representados em centavos inteiros
 
-R$ 10,50 corresponde a 1050 centavos. `balance_cents`, `amount_cents` e `delta_cents` usam `BIGINT` assinado. O valor da operação é positivo; o sinal financeiro fica nos lançamentos. Não usar `FLOAT`, `DOUBLE`, arredondamento implícito ou conversão por ponto flutuante. Entrada e apresentação de moeda serão definidas na etapa de serviço/interface; validar limites para evitar overflow.
+R$ 10,50 corresponde a 1050 centavos. `balance_cents`, `amount_cents` e `delta_cents` usam `BIGINT` assinado. O valor da operação é positivo; o sinal financeiro fica nos lançamentos. Não usar `FLOAT`, `DOUBLE`, arredondamento implícito ou conversão por ponto flutuante. O dashboard da etapa 03 formata o saldo usando inteiros e texto; a entrada de valores financeiros será definida com o serviço. Validar limites para evitar overflow.
 
 ## Ciclo de vida
 
@@ -91,4 +91,4 @@ R$ 10,50 corresponde a 1050 centavos. `balance_cents`, `amount_cents` e `delta_c
 
 Usar `DB::transaction()` e bloqueios de linha `lockForUpdate()` quando necessários. Bloquear carteiras em ordem crescente de identificador; em reversões, primeiro bloquear a original e depois as carteiras. Consultar estado, autorização e idempotência dentro da transação. Deadlocks terão repetição limitada e segura de toda a unidade transacional.
 
-Os testes atuais validam esquema, não executam essas regras nem comprovam garantias concorrentes. Conciliação, número/sinais dos lançamentos, correspondência de reversões, idempotência de respostas e autorização exigirão testes de domínio e integração na etapa seguinte. Revisar as decisões antes de implementar os serviços.
+Os testes atuais validam esquema, cadastro transacional e segurança de sessão; não executam movimentações nem comprovam garantias concorrentes financeiras. Conciliação, número/sinais dos lançamentos, correspondência de reversões, idempotência de respostas e autorização financeira exigirão testes de domínio e integração na etapa seguinte. Revisar as decisões antes de implementar os serviços financeiros.
