@@ -12,7 +12,7 @@
 - Nunca versionar `.env`, credenciais ou segredos. Usar credenciais exclusivas de desenvolvimento.
 - Criar testes unitários e de integração para regras financeiras críticas quando essas regras forem autorizadas e implementadas. Cobrir saldo, precisão monetária, atomicidade, concorrência e reversões conforme os requisitos aprovados.
 - Executar PHP, Artisan, Composer, PHPUnit e Pint preferencialmente dentro do container `laravel.test` após o bootstrap.
-- Usar o runtime oficial PHP 8.3 do Laravel Sail e somente os serviços `laravel.test` e `mysql` nesta etapa.
+- Usar o runtime oficial PHP 8.3 do Laravel Sail e os serviços `laravel.test`, `mysql` e `phpmyadmin`. Manter o phpMyAdmin restrito a `127.0.0.1:8089`, sem login automático.
 - Não executar `docker compose down -v`, `migrate:fresh`, exclusão de volumes ou outros comandos destrutivos sem autorização explícita.
 - Não sobrescrever nem remover arquivos preexistentes do usuário sem autorização.
-- A etapa atual cobre apenas infraestrutura. Aguardar aprovação antes de modelar dados financeiros ou implementar cadastro, autenticação, depósitos, transferências, reversões e interface da carteira.
+- A etapa 02 autoriza infraestrutura, migrations, models, testes de integridade e documentação financeira. Aguardar revisão antes de implementar serviços, controllers financeiros, cadastro, autenticação, depósitos, transferências, reversões e interface da carteira.

@@ -2,13 +2,14 @@
 
 Infraestrutura do desafio técnico Fullstack PHP do Grupo Adriano Cobuccio. O objetivo final é uma carteira financeira com cadastro, autenticação, depósitos, transferências e reversões, conforme o documento fornecido em `../regras_desafio/desafio fullstack PHP.docx`.
 
-Esta entrega prepara somente o ambiente. A aplicação mantém a página inicial, o model `User`, as migrations e os testes padrão do Laravel. Modelagem financeira, autenticação e funcionalidades da carteira dependem de aprovação da próxima etapa.
+A etapa 02 adiciona phpMyAdmin, models e esquema financeiro, preservando a página inicial e as migrations padrão. Regras documentadas em [BUSINESS_RULES.md](docs/BUSINESS_RULES.md) e decisões em [ARCHITECTURE.md](docs/ARCHITECTURE.md) aguardam revisão antes de implementar serviços, autenticação e funcionalidades da carteira.
 
 ## Stack
 
 - PHP 8.3, Laravel 12 e Blade.
 - Laravel Sail oficial, com runtime `vendor/laravel/sail/runtimes/8.3`; nenhum Dockerfile próprio.
 - MySQL 8.4, da família MySQL 8, conforme o serviço oficial do Sail.
+- phpMyAdmin 5.2.3 oficial, somente no loopback local.
 - Composer com autoload PSR-4 e dependências fixadas em `composer.lock`.
 - PHPUnit e Laravel Pint com preset PSR-12 em `pint.json`.
 - Bootstrap 5 previsto para a próxima etapa; ainda não instalado. Os arquivos frontend são os originais do skeleton Laravel, que inclui Tailwind/Vite sem instalação de pacotes Node nesta etapa.
@@ -20,7 +21,7 @@ Esta entrega prepara somente o ambiente. A aplicação mantém a página inicial
 - Git para versionamento.
 - PHP 8.3 e Composer locais apenas para instalar dependências no primeiro bootstrap, caso `vendor` ainda não exista. Habilitar as extensões exigidas pelo Composer, incluindo `curl`, `mbstring`, `openssl`, `xml`, `zip` e PDO.
 - Acesso à internet para baixar pacotes e construir as imagens oficiais.
-- Portas locais 8088 e 3309 livres.
+- Portas locais 8088, 3309 e 8089 livres.
 
 Após o bootstrap, executar os comandos PHP e Artisan dentro do Docker. Node não é necessário para abrir a página padrão nesta etapa.
 
@@ -90,6 +91,7 @@ Acesse **http://localhost:8088**. A primeira construção pode demorar devido ao
 | --- | --- | --- | --- |
 | `laravel.test` | Sail PHP 8.3 (`sail-8.3/app`) | `127.0.0.1:8088` | `80` |
 | `mysql` | `mysql:8.4` | `127.0.0.1:3309` | `3306` |
+| `phpmyadmin` | `phpmyadmin:5.2.3-apache` | `127.0.0.1:8089` | `80` |
 
 O Laravel acessa `mysql:3306` na rede Docker `sail`, usando o banco `wallet_challenge` e o usuário `wallet_dev`. Clientes no Windows usam `127.0.0.1:3309`, com as credenciais do `.env`.
 
@@ -97,16 +99,37 @@ O volume nomeado `sail-mysql`, com nome efetivo `wallet-php_sail-mysql`, persist
 
 As credenciais de inicialização do MySQL são aplicadas na criação de um volume vazio. Alterar apenas o `.env` não altera usuários e senhas de um volume já inicializado; investigar e planejar essa alteração preservando os dados.
 
-Somente os dois serviços acima são configurados. E-mails usam o driver `log`; sessões, cache e filas usam o banco conforme os padrões do Laravel. Nenhum worker é iniciado nesta etapa.
+Somente os três serviços acima são configurados. E-mails usam o driver `log`; sessões, cache e filas usam o banco conforme os padrões do Laravel. Nenhum worker é iniciado nesta etapa.
+
+## phpMyAdmin
+
+A imagem oficial está fixada em `phpmyadmin:5.2.3-apache`, versão estável identificada nas [publicações oficiais](https://www.phpmyadmin.net/downloads/). O serviço usa a rede `sail`, com `PMA_HOST=mysql` e `PMA_PORT=3306`, sem montar nem alterar o volume MySQL.
+
+```powershell
+docker compose config --quiet
+docker compose up -d --no-deps --wait phpmyadmin
+```
+
+O MySQL deve estar ativo e saudável antes desse comando. Abra **http://localhost:8089** (ou `http://127.0.0.1:8089`) e faça login normal com `DB_USERNAME` e `DB_PASSWORD` do seu `.env` local. Selecione `wallet_challenge` para inspecionar as tabelas. Não usar root nem salvar credenciais no código. Não há `PMA_USER`, `PMA_PASSWORD` ou login automático.
+
+A porta publica exclusivamente `127.0.0.1:8089:80`; não está disponível pela rede externa. A versão fixada do phpMyAdmin possui seu próprio runtime, separado do PHP 8.3 da aplicação. Não executar alterações ou exclusões manuais em dados financeiros para simular movimentações.
 
 ## Testes e formatação
+
+O `phpunit.xml`, configurado pelo Sail, usa `APP_ENV=testing` e `DB_DATABASE=testing`, separado do banco de desenvolvimento. Antes da primeira execução dos testes de esquema, aplique migrations nesse banco sem reset:
+
+```powershell
+docker compose exec -T --user sail -e DB_DATABASE=testing laravel.test php artisan migrate --env=testing --no-interaction
+```
+
+Depois execute:
 
 ```powershell
 docker compose exec -T --user sail laravel.test php artisan test
 docker compose exec -T --user sail laravel.test php vendor/bin/pint --test
 ```
 
-O `phpunit.xml`, configurado pelo Sail, usa `APP_ENV=testing` e `DB_DATABASE=testing`, separado do banco de desenvolvimento. Os testes padrão verificam uma asserção unitária e a resposta HTTP da página inicial; não cobrem regras financeiras. A conexão MySQL e as migrations são verificadas separadamente.
+Os testes padrão verificam a asserção unitária e a página inicial. `WalletSchemaTest` valida FKs, exclusões restritivas, unicidade, `CHECK`s, tipos, índices e relacionamentos no MySQL. Cada teste reverte suas fixtures por transação e recusa um banco diferente de `testing`; não usa `RefreshDatabase`, `migrate:fresh` ou reset. As regras de movimentação e concorrência ainda não estão implementadas nem testadas.
 
 Para aplicar PSR-12 ao código:
 
@@ -187,3 +210,21 @@ Foram criados o skeleton Laravel 12, `composer.lock`, a configuração oficial `
 O bootstrap usou o PHP/Composer local. O instalador do Sail publicou os arquivos, mas sua tentativa automática de shell encontrou incompatibilidade com PowerShell; a construção e a execução foram concluídas com Docker Compose. Depois da inicialização, as verificações PHP, Artisan, Composer, PHPUnit e Pint foram executadas nos containers. O acesso HTTP externo foi verificado pelo PowerShell do Windows.
 
 Não há pendências de infraestrutura identificadas nas verificações acima. Bootstrap 5, modelagem e regras financeiras permanecem para uma etapa posterior aprovada. Nenhum volume foi removido e nenhum comando destrutivo foi executado.
+
+## Etapa 02 — Esquema financeiro e phpMyAdmin
+
+Foram adicionadas `wallets`, `operations` e `ledger_entries`, com seus models Eloquent. `User` ganhou apenas o relacionamento com a carteira. As três migrations novas foram aplicadas no lote 2 de `wallet_challenge`; as migrations padrão permanecem no lote 1 e não foram modificadas. O banco contém 12 tabelas. Nenhum reset ou exclusão de volume foi executado.
+
+| Validação em 10/11/2026 | Resultado |
+| --- | --- |
+| Docker Compose | Configuração válida; aplicação, MySQL e phpMyAdmin ativos |
+| phpMyAdmin | Versão 5.2.3, `127.0.0.1:8089:80`, autenticação `cookie`, sem login automático |
+| Conexão a partir do phpMyAdmin | `mysql:3306`, MySQL 8.4.13, acesso a `wallet_challenge` e suas tabelas confirmado |
+| HTTP pelo Windows | Aplicação `localhost:8088` e formulário de login `localhost:8089` responderam 200 |
+| Migrations | Novas migrations aplicadas sem apagar dados em desenvolvimento e em `testing` |
+| PHPUnit | 39 testes aprovados, 153 asserções; fixtures de integridade revertidas por transação |
+| Integridade | Sete FKs restritivas, quatro restrições únicas de domínio, oito `CHECK`s e índices para consultas cronológicas |
+
+O controle automatizado do navegador foi interrompido pela ferramenta por não conseguir confirmar a URL da janela no Windows. A validação visual e o login interativo no navegador permanecem pendentes; as verificações HTTP e de conexão a partir do container foram realizadas. A inclusão isolada da configuração do phpMyAdmin via CLI emitiu avisos por variáveis opcionais ausentes; o endpoint HTTP não exibiu esses avisos. A imagem Apache também emite aviso de `ServerName` ausente, sem bloquear o serviço.
+
+Decisões e limites estão em [ARCHITECTURE.md](docs/ARCHITECTURE.md) e [BUSINESS_RULES.md](docs/BUSINESS_RULES.md). O saldo admite negativos; `amount_cents` exige valor positivo; o histórico de reversões usa referência original única e estados `completed`/`reversed`. O esquema não executa nem substitui autorização, conciliação, idempotência transacional ou controles concorrentes do futuro serviço. Nenhum serviço financeiro, controller, autenticação ou interface foi implementado. Aguardar revisão antes da próxima etapa.
