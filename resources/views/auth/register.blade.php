@@ -19,14 +19,14 @@
                     <div class="mb-3">
                         <label for="name" class="form-label">Nome</label>
                         <input type="text" class="form-control @error('name') is-invalid @enderror" id="name" name="name"
-                               value="{{ old('name') }}" autocomplete="name" maxlength="255" required autofocus
+                               value="{{ is_string(old('name')) ? old('name') : '' }}" autocomplete="name" maxlength="255" required autofocus
                                @error('name') aria-invalid="true" aria-describedby="name-error" @enderror>
                         @error('name')<div id="name-error" class="invalid-feedback" role="alert">{{ $message }}</div>@enderror
                     </div>
                     <div class="mb-3">
                         <label for="email" class="form-label">E-mail</label>
                         <input type="email" class="form-control @error('email') is-invalid @enderror" id="email" name="email"
-                               value="{{ old('email') }}" autocomplete="email" maxlength="255" required
+                               value="{{ is_string(old('email')) ? old('email') : '' }}" autocomplete="email" maxlength="255" required
                                @error('email') aria-invalid="true" aria-describedby="email-error" @enderror>
                         @error('email')<div id="email-error" class="invalid-feedback" role="alert">{{ $message }}</div>@enderror
                     </div>

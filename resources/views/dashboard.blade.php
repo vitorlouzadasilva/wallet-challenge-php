@@ -1,6 +1,11 @@
 @extends('layouts.app')
 @section('title', 'Minha carteira')
 @section('content')
+@php
+    $oldAmount = is_string(old('amount')) ? old('amount') : '';
+    $oldEmail = is_string(old('email')) ? old('email') : '';
+    $oldKey = is_string(old('idempotency_key')) ? old('idempotency_key') : null;
+@endphp
 <div class="container page-spacing">
     <div class="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-4">
         <div>
@@ -28,10 +33,10 @@
                     <form method="POST" action="{{ route('wallet.deposit') }}">
                         @csrf
                         <input type="hidden" name="wallet_form" value="deposit">
-                        <input type="hidden" name="idempotency_key" value="{{ old('wallet_form') === 'deposit' ? old('idempotency_key', $depositKey) : $depositKey }}">
+                        <input type="hidden" name="idempotency_key" value="{{ old('wallet_form') === 'deposit' ? ($oldKey ?? $depositKey) : $depositKey }}">
                         <label for="deposit-amount" class="form-label">Valor em reais</label>
                         <input id="deposit-amount" name="amount" type="text" inputmode="decimal" autocomplete="off"
-                               placeholder="10,50" value="{{ old('wallet_form') === 'deposit' ? old('amount') : '' }}"
+                               placeholder="10,50" value="{{ old('wallet_form') === 'deposit' ? $oldAmount : '' }}"
                                class="form-control @error('amount', 'deposit') is-invalid @enderror" required aria-describedby="deposit-help">
                         <div id="deposit-help" class="form-text">Exemplo: 10,50. Sem separador de milhares.</div>
                         @error('amount', 'deposit')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
@@ -48,17 +53,17 @@
                     <form method="POST" action="{{ route('wallet.transfer') }}">
                         @csrf
                         <input type="hidden" name="wallet_form" value="transfer">
-                        <input type="hidden" name="idempotency_key" value="{{ old('wallet_form') === 'transfer' ? old('idempotency_key', $transferKey) : $transferKey }}">
+                        <input type="hidden" name="idempotency_key" value="{{ old('wallet_form') === 'transfer' ? ($oldKey ?? $transferKey) : $transferKey }}">
                         <div class="mb-3">
                             <label for="transfer-email" class="form-label">E-mail do destinatário</label>
                             <input id="transfer-email" name="email" type="email" autocomplete="email"
-                                   value="{{ old('wallet_form') === 'transfer' ? old('email') : '' }}"
+                                   value="{{ old('wallet_form') === 'transfer' ? $oldEmail : '' }}"
                                    class="form-control @error('email', 'transfer') is-invalid @enderror" required>
                             @error('email', 'transfer')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
                         <label for="transfer-amount" class="form-label">Valor em reais</label>
                         <input id="transfer-amount" name="amount" type="text" inputmode="decimal" autocomplete="off"
-                               placeholder="10,50" value="{{ old('wallet_form') === 'transfer' ? old('amount') : '' }}"
+                               placeholder="10,50" value="{{ old('wallet_form') === 'transfer' ? $oldAmount : '' }}"
                                class="form-control @error('amount', 'transfer') is-invalid @enderror" required aria-describedby="transfer-help">
                         <div id="transfer-help" class="form-text">Exemplo: 10,50. O destinatário precisa ter uma conta.</div>
                         @error('amount', 'transfer')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
@@ -119,7 +124,7 @@
                                         @csrf
                                         <input type="hidden" name="wallet_form" value="reverse">
                                         <input type="hidden" name="reverse_operation_id" value="{{ $operation->id }}">
-                                        <input type="hidden" name="idempotency_key" value="{{ old('wallet_form') === 'reverse' && (string) old('reverse_operation_id') === (string) $operation->id ? old('idempotency_key', $reverseKey) : $reverseKey }}">
+                                        <input type="hidden" name="idempotency_key" value="{{ old('wallet_form') === 'reverse' && filter_var(old('reverse_operation_id'), FILTER_VALIDATE_INT) === $operation->id ? ($oldKey ?? $reverseKey) : $reverseKey }}">
                                         <button type="submit" class="btn btn-outline-primary btn-sm">Reverter</button>
                                     </form>
                                 @else

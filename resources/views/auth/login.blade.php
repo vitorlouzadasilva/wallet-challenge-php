@@ -18,7 +18,7 @@
                     <div class="mb-3">
                         <label for="email" class="form-label">E-mail</label>
                         <input type="email" class="form-control @error('email') is-invalid @enderror" id="email" name="email"
-                               value="{{ old('email') }}" autocomplete="username" maxlength="255" required autofocus
+                               value="{{ is_string(old('email')) ? old('email') : '' }}" autocomplete="username" maxlength="255" required autofocus
                                @error('email') aria-invalid="true" aria-describedby="email-error" @enderror>
                         @error('email')<div id="email-error" class="invalid-feedback" role="alert">{{ $message }}</div>@enderror
                     </div>

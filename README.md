@@ -18,7 +18,9 @@ PHP 8.3, Laravel 12, MySQL 8.4/InnoDB e Laravel Sail em Docker Compose. A interf
 
 ## Instalação local
 
-As instruções abaixo usam **Windows com PowerShell**. Tenha Docker Desktop com backend Linux/WSL2, PHP 8.3 e Composer disponíveis. O PHP e o Composer locais servem apenas para instalar o Sail no primeiro bootstrap; depois, os comandos da aplicação rodam no container. Node.js local não é necessário. Deixe livres as portas `8088`, `8089` e `3309`.
+As instruções abaixo usam **Windows com PowerShell**. Tenha Docker Desktop com backend Linux/WSL2, Docker Compose v2 ou superior, PHP 8.3 de 64 bits e Composer 2 disponíveis. O PHP local precisa das extensões exigidas pelo lockfile, incluindo `mbstring`, `openssl`, `pdo`, `tokenizer`, `xml`, `dom`, `fileinfo`, `ctype` e `session`. `curl` e `zip` facilitam a instalação dos pacotes. O Composer verifica a compatibilidade durante a instalação.
+
+O PHP e o Composer locais servem apenas para instalar o Sail no primeiro bootstrap. Depois, os comandos da aplicação rodam no container. Node.js local não é necessário, pois o runtime Sail fornece Node e npm. A primeira instalação precisa de acesso à internet para baixar pacotes e imagens. Deixe livres as portas `8088`, `8089` e `3309`.
 
 No diretório do projeto, instale as dependências PHP e crie o arquivo de ambiente se ele ainda não existir:
 
@@ -67,25 +69,45 @@ O Laravel organiza rotas, controllers, Form Requests, models Eloquent e views Bl
 
 O `WalletService` executa depósitos, transferências e reversões em transações SQL. Ele bloqueia os registros necessários antes de conferir e atualizar saldos, grava a operação e seus lançamentos no mesmo commit e usa uma chave idempotente única para impedir que a repetição de uma solicitação duplique efeitos financeiros. A reversão registra lançamentos compensatórios e mantém a operação original para auditoria.
 
-O extrato consulta somente a carteira do usuário autenticado. As regras completas, relacionamentos e decisões técnicas estão em [Regras de negócio](docs/BUSINESS_RULES.md) e [Arquitetura](docs/ARCHITECTURE.md).
+O extrato consulta somente a carteira do usuário autenticado. Depósitos e transferências aceitam valores como `10`, `10,5` e `10,50`. O extrato exibe dez lançamentos por página. O botão **Reverter** pede confirmação e aparece nas operações elegíveis iniciadas pela própria conta.
 
 ## Testes e qualidade
 
-Os testes usam o banco MySQL separado `testing`. Em uma instalação nova, aplique as migrations **nesse banco** antes da primeira execução; o comando não apaga o banco de desenvolvimento:
+Os testes usam o banco MySQL separado `testing`, criado pelo script de inicialização do Sail em volumes novos. Antes dos testes, limpe o cache de configuração para aplicar as variáveis do ambiente de teste. Em uma instalação nova, aplique as migrations **nesse banco** antes da primeira execução.
 
 ```powershell
-docker compose exec -T --user sail -e DB_DATABASE=testing laravel.test php artisan migrate --env=testing --no-interaction
+docker compose exec -T --user sail laravel.test php artisan config:clear
+docker compose exec -T --user sail -e DB_DATABASE=testing -e DB_URL= laravel.test php artisan migrate --env=testing --no-interaction
 ```
 
 Depois, execute a suíte, confira o padrão de código e, se modificar CSS ou JavaScript, refaça o build:
 
 ```powershell
-docker compose exec -T --user sail laravel.test php artisan test
+docker compose exec -T --user sail -e DB_DATABASE=testing -e DB_URL= laravel.test php artisan test
 docker compose exec -T --user sail laravel.test php vendor/bin/pint --test
 docker compose exec -T --user sail laravel.test npm run build
 ```
 
-Os testes de banco isolam suas alterações por transações e cobrem autenticação, integridade relacional, valores monetários, idempotência, transferências, reversões e rotas HTTP. Para consultar o estado da aplicação: `docker compose ps` e `docker compose exec -T --user sail laravel.test php artisan migrate:status`.
+Os testes de banco conferem o nome `testing` antes de abrir transações e revertem suas fixtures ao terminar. Cobrem autenticação, integridade relacional, valores monetários, idempotência, transferências, reversões e rotas HTTP. Em um volume antigo sem `testing`, será necessário provisionar esse banco separado e conceder acesso ao usuário de desenvolvimento antes desses comandos.
+
+Para conferir o ambiente, execute os comandos abaixo.
+
+```powershell
+docker compose config --quiet
+docker compose ps
+docker compose exec -T --user sail laravel.test php artisan route:list -v
+docker compose exec -T --user sail laravel.test php artisan migrate:status
+```
+
+## Documentação técnica e instalação verificada
+
+- [Arquitetura](docs/ARCHITECTURE.md) descreve camadas, entidades, transações e integração HTTP.
+- [Regras de negócio](docs/BUSINESS_RULES.md) registra o contrato financeiro implementado.
+- [Decisões técnicas](docs/TECHNICAL_DECISIONS.md) reúne justificativas, evidências, limitações e explicações para entrevista, além dos resultados da auditoria da etapa 05.
+
+A documentação necessária à avaliação está dentro deste repositório. O README utiliza apenas referências internas para os documentos do desafio.
+
+Em 11/11/2026, a instalação foi executada em cópia isolada dos arquivos do projeto, com dependências instaladas pelos lockfiles, banco e volume novos, outro nome de Compose e portas alternativas. As migrations, o build, os 185 testes e os fluxos HTTP de cadastro, depósito, transferência e reversão passaram. O build Docker aproveitou cache local. Os detalhes e os limites dessa verificação estão no documento de decisões técnicas.
 
 ## Limitações
 

@@ -11,7 +11,10 @@ use App\Models\Wallet;
 use App\Services\WalletService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Throwable;
 use Tests\TestCase;
 
 class WalletWebTest extends TestCase
@@ -291,6 +294,61 @@ class WalletWebTest extends TestCase
         self::assertSame($beforeEntries, LedgerEntry::query()->count());
         self::assertSame(1000, $this->balance($this->alice));
         self::assertSame(0, $this->balance($this->bob));
+        $this->assertIntegrity();
+    }
+
+    #[DataProvider('internalFailures')]
+    public function test_internal_failures_keep_response_and_log_sanitized(Throwable $exception): void
+    {
+        $key = (string) Str::uuid();
+        $this->mock(WalletService::class)->shouldReceive('deposit')->once()->andThrow($exception);
+        Log::shouldReceive('error')->once()->with('Falha inesperada em operação financeira.', [
+            'type' => $exception::class,
+            'file' => $exception->getFile(),
+            'line' => $exception->getLine(),
+        ]);
+
+        $this->actingAs($this->alice)->post(route('wallet.deposit'), $this->amountInput(['idempotency_key' => $key]))
+            ->assertRedirect(route('dashboard'))->assertSessionMissing('status')
+            ->assertSessionHas('errors', fn ($errors): bool => $errors->getBag('deposit')->has('wallet'));
+        $this->get(route('dashboard'))->assertOk()
+            ->assertSee('Não foi possível concluir a solicitação. Tente novamente mais tarde.')
+            ->assertSee($key)->assertDontSee('private-diagnostic');
+        $this->assertNoOperations();
+    }
+
+    public static function internalFailures(): array
+    {
+        return [
+            [new \RuntimeException('SELECT private-diagnostic FROM users')],
+            [new \Error('private-diagnostic')],
+            [new \App\Exceptions\Wallet\FinancialPersistenceException(new \RuntimeException('private-diagnostic'))],
+        ];
+    }
+
+    public function test_invalid_array_inputs_can_be_redisplayed_without_internal_error(): void
+    {
+        $this->actingAs($this->alice)->post(route('wallet.deposit'), $this->amountInput([
+            'amount' => ['10'], 'idempotency_key' => ['invalid'],
+        ]))->assertSessionHas('errors', fn ($errors): bool => $errors->getBag('deposit')->has('amount'));
+        $this->get(route('dashboard'))->assertOk();
+
+        $this->actingAs($this->alice)->post(route('wallet.transfer'), $this->amountInput([
+            'wallet_form' => 'transfer', 'email' => ['invalid'], 'amount' => ['10'], 'idempotency_key' => ['invalid'],
+        ]))->assertSessionHas('errors', fn ($errors): bool => $errors->getBag('transfer')->has('amount'));
+        $this->get(route('dashboard'))->assertOk();
+        $this->assertNoOperations();
+    }
+
+    public function test_invalid_reverse_array_input_can_be_redisplayed(): void
+    {
+        $original = $this->service->deposit($this->alice, 100, (string) Str::uuid());
+        $this->actingAs($this->alice)->post(route('operations.reverse', $original->id), $this->keyInput([
+            'idempotency_key' => ['invalid'], 'reverse_operation_id' => ['invalid'],
+        ]))->assertSessionHas('errors', fn ($errors): bool => $errors->getBag('reverse')->has('idempotency_key'));
+        $this->get(route('dashboard'))->assertOk();
+        self::assertSame('completed', $original->fresh()->status);
+        self::assertSame(1, Operation::query()->count());
         $this->assertIntegrity();
     }
 

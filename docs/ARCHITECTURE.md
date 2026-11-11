@@ -28,7 +28,7 @@ Após login/cadastro, a sessão é regenerada. Logout é somente POST autenticad
 
 `DashboardController` consulta exclusivamente `$request->user()->wallet()`. Parâmetros `user_id`/`wallet_id` da requisição não selecionam registros. Carteira ausente em usuários antigos produz mensagem e não cria dados na consulta. `BrazilianCurrency` formata centavos como texto, sem float e cobrindo os limites de inteiro de 64 bits. Os valores exibidos são escapados pelo Blade.
 
-O frontend usa Bootstrap 5.3.8, CSS próprio e o componente Collapse para navegação móvel. Vite compila todos os assets locais, sem CDN ou fontes externas. Não há novo pacote PHP, Repository Pattern, interfaces artificiais ou interface financeira. A separação entre Request, controller, serviço, model e apresentação aplica responsabilidade única sem abstrações extras.
+O frontend usa Bootstrap 5.3.8, CSS próprio e o componente Collapse para navegação móvel. Vite compila todos os assets locais, sem CDN ou fontes externas. A interface financeira da etapa 04B reutiliza o serviço existente. A separação entre Request, controller, serviço, model e apresentação aplica responsabilidade única. Eloquent e os serviços concretos atendem à persistência e aos casos de uso atuais.
 
 ## Entidades e relacionamentos
 
@@ -99,7 +99,7 @@ Todos os métodos retornam `Operation`, com a relação `ledgerEntries` carregad
 | `transfer(User $actor, int $destinationWalletId, mixed $amountCents, string $idempotencyKey): Operation` | Descobre a origem pelo ator; destino é ID de **carteira**, não de usuário; exige outro proprietário e saldo suficiente. |
 | `reverse(User $actor, int $originalOperationId, string $idempotencyKey): Operation` | Carrega original e participantes no servidor, valida autorização, compensa lançamentos e altera somente o status da original. |
 
-`mixed` nos valores é intencional: a fronteira exige `is_int()` e rejeita strings, floats, booleanos, zero e negativos com `InvalidAmount`. Uma assinatura `int` isolada permitiria coerção silenciosa por chamadores PHP sem `strict_types`. Após a validação, os auxiliares monetários recebem somente inteiros. O runtime deve ser de 64 bits. O futuro Form Request financeiro precisará validar e converter a representação de entrada sem float e sem ultrapassar BIGINT.
+`mixed` nos valores é intencional: a fronteira exige `is_int()` e rejeita strings, floats, booleanos, zero e negativos com `InvalidAmount`. Uma assinatura `int` isolada permitiria coerção silenciosa por chamadores PHP sem `strict_types`. Após a validação, os auxiliares monetários recebem somente inteiros. O runtime deve ser de 64 bits. Os Form Requests financeiros usam `ReaisToCents` para validar e converter a representação de entrada respeitando BIGINT.
 
 ## Transações e bloqueios implementados
 
@@ -126,7 +126,7 @@ A recuperação de colisão é limitada a uma nova unidade transacional. A detec
 
 ## Falhas e exceções
 
-As classes em `app/Exceptions/Wallet` distinguem valor/chave inválidos, carteira ausente, falta de autorização, saldo insuficiente, conflito idempotente, operação inválida/já revertida e limite de saldo. `FinancialPersistenceException` sinaliza falha SQL ou cancelamento de `save()` por evento Eloquent, com mensagem pública genérica. A causa SQL fica em `previous` apenas para diagnóstico interno; uma futura resposta HTTP não deverá serializar exceções, SQL ou stack traces.
+As classes em `app/Exceptions/Wallet` distinguem valor/chave inválidos, carteira ausente, falta de autorização, saldo insuficiente, conflito idempotente, operação inválida/já revertida e limite de saldo. `FinancialPersistenceException` sinaliza falha SQL ou cancelamento de `save()` por evento Eloquent, com mensagem pública genérica. A causa SQL fica em `previous` para diagnóstico interno. `WalletController` traduz essas falhas em mensagens de formulário e limita o log inesperado à classe, arquivo e linha.
 
 Não há catch de `Throwable` retornando sucesso. Erros de programação e integridade histórica propagam após rollback. Nenhuma senha, sessão ou credencial é registrada pelo serviço. O chamador só recebe sucesso após a transação controlada pelo serviço concluir.
 
@@ -162,3 +162,9 @@ As rotas financeiras POST usam `auth`, CSRF do middleware `web` e `throttle:wall
 `ReaisToCents` valida strings decimais brasileiras e compara os dígitos com `PHP_INT_MAX` antes do cast. Não há aritmética de ponto flutuante. Os três formulários recebem UUID gerado no servidor; os Form Requests validam o formato. `old()` mantém a mesma chave quando a validação falha, e o controller preserva explicitamente a chave em erros de domínio. Após sucesso, POST/Redirect/GET fornece formulários novos. A garantia final continua sendo o índice `UNIQUE` e a recuperação transacional do serviço; o rate limit não substitui idempotência.
 
 Falhas inesperadas retornam mensagem genérica e um log diagnóstico limitado à classe, arquivo e linha da exceção, sem SQL, parâmetros ou payload. O diagnóstico de causa raiz pode exigir investigação no ambiente, pois o conteúdo da exceção é intencionalmente omitido. Não há endpoint de extrato alheio, seleção pública de usuários, integrações bancárias ou novas migrations. Testes HTTP exercitam autorização, CSRF, rate limit, replay, paginação, reversão e rollback no MySQL `testing`.
+
+## Revisão da etapa 05
+
+A regra compartilhada `PasswordByteLimit` também rejeita byte nulo, que provocava falha ao criar o hash e permitia ignorar um sufixo na verificação bcrypt. As views reapresentam somente strings dos campos textuais após erros de validação, evitando erro 500 com arrays enviados nesses campos. Testes de regressão cobrem ambos os casos e verificam resposta e log sanitizados para exceções internas do controller financeiro.
+
+As decisões verificadas, a reconciliação somente de leitura e as evidências de instalação estão em [TECHNICAL_DECISIONS.md](TECHNICAL_DECISIONS.md).

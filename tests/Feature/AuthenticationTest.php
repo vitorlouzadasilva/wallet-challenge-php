@@ -104,6 +104,7 @@ class AuthenticationTest extends TestCase
             'short password' => [['password' => 'curta', 'password_confirmation' => 'curta'], 'password'],
             'confirmation mismatch' => [['password_confirmation' => 'OutraSenhaSegura'], 'password'],
             'bcrypt byte limit' => [['password' => str_repeat('á', 37), 'password_confirmation' => str_repeat('á', 37)], 'password'],
+            'bcrypt null byte' => [['password' => "UmaSenha\0Segura2026", 'password_confirmation' => "UmaSenha\0Segura2026"], 'password'],
         ];
     }
 
@@ -176,12 +177,34 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_authentication_forms_can_redisplay_invalid_array_input(): void
+    {
+        $this->from(route('register'))->post(route('register.store'), $this->registrationData([
+            'name' => ['invalid'], 'email' => ['invalid'],
+        ]))->assertSessionHasErrors(['name', 'email']);
+        $this->get(route('register'))->assertOk();
+
+        $this->from(route('login'))->post(route('login.store'), ['email' => ['invalid'], 'password' => self::PASSWORD])
+            ->assertSessionHasErrors('email');
+        $this->get(route('login'))->assertOk();
+        $this->assertGuest();
+    }
+
     public function test_login_rejects_password_above_bcrypt_byte_limit(): void
     {
         $this->userWithWallet(['email' => 'login@example.com']);
         $this->post(route('login.store'), ['email' => 'login@example.com', 'password' => str_repeat('á', 37)])
             ->assertSessionHasErrors('password');
         $this->assertGuest();
+    }
+
+    public function test_login_rejects_password_with_null_byte_without_authenticating(): void
+    {
+        $this->userWithWallet(['email' => 'login@example.com']);
+        $this->post(route('login.store'), ['email' => 'login@example.com', 'password' => self::PASSWORD."\0suffix"])
+            ->assertSessionHasErrors('password');
+        $this->assertGuest();
+        self::assertNull(session('_old_input.password'));
     }
 
     public function test_login_is_limited_after_five_failures_and_recovers_after_expiration(): void
