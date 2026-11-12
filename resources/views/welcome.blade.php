@@ -1,5 +1,5 @@
 @extends('layouts.app')
-@section('title', 'Bem-vindo')
+@section('title', 'Wallet PHP')
 @section('content')
 <div class="container hero-section">
     <div class="row align-items-center justify-content-between g-5">

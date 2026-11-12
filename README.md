@@ -1,6 +1,7 @@
 # Wallet PHP — carteira financeira
+# Autor - Vitor Louzada da Silva
 
-Aplicação web desenvolvida para o desafio Fullstack PHP do Grupo Adriano Cobuccio. É uma **simulação de carteira digital**: cada pessoa cria sua conta, acompanha o saldo e pode registrar depósitos, transferências para outra conta e reversões. Não há movimentação de dinheiro real.
+Aplicação web desenvolvida para o desafio Fullstack PHP do Grupo Adriano Cobuccio. É uma **simulação de carteira digital**: cada pessoa cria sua conta, acompanha o saldo e pode registrar depósitos, transferências para outra conta e reversões.
 
 ## O que a aplicação oferece
 
@@ -10,7 +11,7 @@ Aplicação web desenvolvida para o desafio Fullstack PHP do Grupo Adriano Cobuc
 - Extrato paginado com débitos, créditos, situação e referência das operações.
 - Reversão de depósito ou transferência pelo usuário que iniciou a operação, com preservação do histórico original.
 
-Para conhecer o fluxo, crie duas contas pelo formulário em `/register`. Na primeira, faça um depósito de `10,50`, transfira `2,00` para o e-mail da segunda e consulte o extrato de ambas. Volte à primeira conta para testar **Reverter**. Não é necessário seed nem existem credenciais de demonstração.
+Para conhecer o fluxo, crie duas contas pelo formulário em `/register`. Na primeira, faça um depósito de `10,50`, transfira `2,00` para o e-mail da segunda e consulte o extrato de ambas. Volte à primeira conta para testar **Reverter**.
 
 ## Tecnologias
 
@@ -103,21 +104,7 @@ docker compose exec -T --user sail laravel.test php artisan route:list -v
 docker compose exec -T --user sail laravel.test php artisan migrate:status
 ```
 
-## Documentação técnica e instalação verificada
+## Documentação técnica
 
 - [Arquitetura](docs/ARCHITECTURE.md) descreve camadas, entidades, transações e integração HTTP.
 - [Regras de negócio](docs/BUSINESS_RULES.md) registra o contrato financeiro implementado.
-- [Decisões técnicas](docs/TECHNICAL_DECISIONS.md) reúne justificativas, evidências, limitações e explicações para entrevista, além dos resultados da auditoria da etapa 05.
-
-A documentação necessária à avaliação está dentro deste repositório. O README utiliza apenas referências internas para os documentos do desafio.
-
-Em 11/11/2026, a instalação foi executada em cópia isolada dos arquivos do projeto, com dependências instaladas pelos lockfiles, banco e volume novos, outro nome de Compose e portas alternativas. As migrations, o build, os 185 testes e os fluxos HTTP de cadastro, depósito, transferência e reversão passaram. O build Docker aproveitou cache local. Os detalhes e os limites dessa verificação estão no documento de decisões técnicas.
-
-## Limitações
-
-- Depósitos são simulados; não há PIX, cartões, gateway ou integração bancária. Também não há recuperação de senha nem painel administrativo.
-- Uma reversão autorizada pode deixar saldo negativo, conforme a regra desta simulação.
-- Os testes existentes verificam transações e colisões de chave, mas não reproduzem todos os cenários com processos concorrentes independentes.
-- O serviço pressupõe dados financeiros consistentes; alterações manuais feitas diretamente no banco não são conciliadas ou reparadas automaticamente.
-
-Este projeto está configurado para **desenvolvimento local**. Antes de qualquer uso público, são necessárias configurações próprias de produção, incluindo segredos, acesso ao banco e tratamento de erros.
