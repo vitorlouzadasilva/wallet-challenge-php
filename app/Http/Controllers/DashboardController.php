@@ -14,7 +14,13 @@ class DashboardController extends Controller
         // A relação parte da sessão; IDs enviados na requisição nunca selecionam a carteira.
         $wallet = $request->user()->wallet()->first();
         $entries = $wallet?->ledgerEntries()
-            ->with(['operation.originalOperation'])
+            ->with([
+                'operation.originalOperation',
+                'operation.sourceWallet:id,user_id',
+                'operation.sourceWallet.user:id,name',
+                'operation.destinationWallet:id,user_id',
+                'operation.destinationWallet.user:id,name',
+            ])
             ->orderByDesc('id')
             ->paginate(10);
 

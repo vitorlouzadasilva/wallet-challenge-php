@@ -248,6 +248,27 @@ class WalletWebTest extends TestCase
             ->assertSee('Operação #'.$transfer->id)->assertDontSee('Reverter');
     }
 
+    public function test_statement_identifies_transfer_participants_with_escaped_names_only_for_their_wallets(): void
+    {
+        $this->alice->update(['name' => 'Alice <b>Origem</b>']);
+        $this->bob->update(['name' => 'Bob <b>Destino</b>']);
+        $this->service->deposit($this->alice, 1000, (string) Str::uuid());
+        $transfer = $this->service->transfer($this->alice, $this->bob->wallet->id, 200, (string) Str::uuid());
+
+        $this->actingAs($this->alice)->get(route('dashboard'))->assertOk()
+            ->assertSee('Para: Bob &lt;b&gt;Destino&lt;/b&gt;', false)
+            ->assertDontSee('Para: Bob <b>Destino</b>', false)
+            ->assertSee('Operação #'.$transfer->id);
+        $this->actingAs($this->bob)->get(route('dashboard'))->assertOk()
+            ->assertSee('De: Alice &lt;b&gt;Origem&lt;/b&gt;', false)
+            ->assertDontSee('De: Alice <b>Origem</b>', false);
+
+        $outsider = $this->newUser();
+        $this->actingAs($outsider)->get(route('dashboard', ['wallet_id' => $this->alice->wallet->id]))
+            ->assertOk()->assertDontSee('Operação #'.$transfer->id)
+            ->assertDontSee('Para: Bob')->assertDontSee('De: Alice');
+    }
+
     public function test_failed_reversal_on_second_page_keeps_same_key_and_page(): void
     {
         $first = $this->service->deposit($this->alice, 100, (string) Str::uuid());

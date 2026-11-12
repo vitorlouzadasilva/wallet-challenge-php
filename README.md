@@ -71,7 +71,11 @@ O `WalletService` executa depósitos, transferências e reversões em transaçõ
 
 O extrato consulta somente a carteira do usuário autenticado. Depósitos e transferências aceitam valores como `10`, `10,5` e `10,50`. O extrato exibe dez lançamentos por página. O botão **Reverter** pede confirmação e aparece nas operações elegíveis iniciadas pela própria conta.
 
+O extrato identifica o destinatário nas transferências enviadas (`Para: nome`) e o remetente nas recebidas (`De: nome`), preservando a referência da operação. O nome exibido é o atual do cadastro, não uma cópia histórica; somente lançamentos da própria carteira são consultados.
+
 ## Testes e qualidade
+
+Os campos de depósito e transferência possuem máscara em JavaScript: digite `1050` para obter `10,50`. Ao colar, use o valor em reais (`10`, `10,5` ou `10,50`), sem símbolo ou separador de milhares. A máscara usa strings e mantém a validação monetária no servidor. Seus testes podem ser executados com `docker compose exec -T --user sail laravel.test node --test tests/JavaScript/money-input.test.js`.
 
 Os testes usam o banco MySQL separado `testing`, criado pelo script de inicialização do Sail em volumes novos. Antes dos testes, limpe o cache de configuração para aplicar as variáveis do ambiente de teste. Em uma instalação nova, aplique as migrations **nesse banco** antes da primeira execução.
 

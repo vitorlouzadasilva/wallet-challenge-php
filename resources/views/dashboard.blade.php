@@ -35,10 +35,10 @@
                         <input type="hidden" name="wallet_form" value="deposit">
                         <input type="hidden" name="idempotency_key" value="{{ old('wallet_form') === 'deposit' ? ($oldKey ?? $depositKey) : $depositKey }}">
                         <label for="deposit-amount" class="form-label">Valor em reais</label>
-                        <input id="deposit-amount" name="amount" type="text" inputmode="decimal" autocomplete="off"
+                        <input id="deposit-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" data-money-input maxlength="20"
                                placeholder="10,50" value="{{ old('wallet_form') === 'deposit' ? $oldAmount : '' }}"
                                class="form-control @error('amount', 'deposit') is-invalid @enderror" required aria-describedby="deposit-help">
-                        <div id="deposit-help" class="form-text">Exemplo: 10,50. Sem separador de milhares.</div>
+                        <div id="deposit-help" class="form-text">Digite os números: 1050 vira 10,50. Para colar, use 10,50, sem separador de milhares.</div>
                         @error('amount', 'deposit')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
                         @error('idempotency_key', 'deposit')<div class="text-danger small mt-2">{{ $message }}</div>@enderror
                         <button type="submit" class="btn btn-primary mt-3">Confirmar depósito</button>
@@ -62,10 +62,10 @@
                             @error('email', 'transfer')<div class="invalid-feedback">{{ $message }}</div>@enderror
                         </div>
                         <label for="transfer-amount" class="form-label">Valor em reais</label>
-                        <input id="transfer-amount" name="amount" type="text" inputmode="decimal" autocomplete="off"
+                        <input id="transfer-amount" name="amount" type="text" inputmode="decimal" autocomplete="off" data-money-input maxlength="20"
                                placeholder="10,50" value="{{ old('wallet_form') === 'transfer' ? $oldAmount : '' }}"
                                class="form-control @error('amount', 'transfer') is-invalid @enderror" required aria-describedby="transfer-help">
-                        <div id="transfer-help" class="form-text">Exemplo: 10,50. O destinatário precisa ter uma conta.</div>
+                        <div id="transfer-help" class="form-text">Digite os números: 1050 vira 10,50. O destinatário precisa ter uma conta.</div>
                         @error('amount', 'transfer')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
                         @error('idempotency_key', 'transfer')<div class="text-danger small mt-2">{{ $message }}</div>@enderror
                         <button type="submit" class="btn btn-primary mt-3">Confirmar transferência</button>
@@ -114,6 +114,9 @@
                                     @else Reversão de {{ $operation->originalOperation?->type === 'deposit' ? 'depósito' : 'transferência' }}
                                     @endif
                                 </span>
+                                @if($operation->type === 'transfer')
+                                    <small class="d-block text-secondary">{{ $isDebit ? 'Para' : 'De' }}: {{ ($isDebit ? $operation->destinationWallet?->user?->name : $operation->sourceWallet?->user?->name) ?? 'Usuário indisponível' }}</small>
+                                @endif
                                 <small class="d-block text-secondary">Operação #{{ $operation->id }}@if($operation->reversal_of_operation_id) · Ref. #{{ $operation->reversal_of_operation_id }}@endif</small>
                             </td>
                             <td><span class="badge {{ $operation->status === 'reversed' ? 'text-bg-secondary' : 'text-bg-success' }}">{{ $operation->status === 'reversed' ? 'Revertida' : 'Concluída' }}</span></td>
