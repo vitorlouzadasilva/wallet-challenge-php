@@ -167,4 +167,4 @@ Falhas inesperadas retornam mensagem genérica e um log diagnóstico limitado à
 
 A regra compartilhada `PasswordByteLimit` também rejeita byte nulo, que provocava falha ao criar o hash e permitia ignorar um sufixo na verificação bcrypt. As views reapresentam somente strings dos campos textuais após erros de validação, evitando erro 500 com arrays enviados nesses campos. Testes de regressão cobrem ambos os casos e verificam resposta e log sanitizados para exceções internas do controller financeiro.
 
-As decisões verificadas, a reconciliação somente de leitura e as evidências de instalação estão em [TECHNICAL_DECISIONS.md](TECHNICAL_DECISIONS.md).
+As instruções de instalação e validação estão no [README](../README.md); as invariantes financeiras estão em [Regras de negócio](BUSINESS_RULES.md).
